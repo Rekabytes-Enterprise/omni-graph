@@ -1,0 +1,247 @@
+<div align="center">
+
+![Omni-graph — connected memory for AI agents](assets/omni-graph.svg)
+
+**Local memory for your AI agents. A graph you can explore.**
+
+[![MIT License](https://img.shields.io/badge/license-MIT-a6e3a1?style=flat-square)](LICENSE)
+![Local first](https://img.shields.io/badge/storage-local_SQLite-9cc7ff?style=flat-square)
+![Rust TUI](https://img.shields.io/badge/interface-Rust_TUI-e9c46a?style=flat-square)
+
+[Install](#install) · [Get started](#get-started) · [Agent setup](#agent-setup) · [Explore the graph](#explore-the-graph) · [Contribute](CONTRIBUTING.md)
+
+</div>
+
+Omni-graph keeps the context that should survive an agent session: why you made a decision, what went wrong, how you fixed it, and what to learn next. Memories connect across a graph, so your agents can retrieve the surrounding context instead of starting over.
+
+Use it across freelance work, client projects, and personal repositories. Keep shared preferences global and project knowledge close to the work.
+
+- **Remember with context.** Store decisions, constraints, lessons, mistakes, fixes, learning goals, and handoffs.
+- **Retrieve before acting.** Search with SQLite FTS5 and recall related memories through graph connections.
+- **Learn from the last attempt.** Connect failures to fixes, lessons, and verification evidence.
+- **See the relationships.** Explore a Rust terminal graph with search, pan, zoom, draggable nodes, and animated connections.
+- **Keep control of your data.** Local SQLite storage, explicit sharing, and no database server or account required.
+
+## Install
+
+> Public installation becomes available when the first npm package and GitHub release are published. The installers and release workflow are included in this repository.
+
+### With npx
+
+Requires Node.js 20 or newer for installation:
+
+```sh
+npx --yes omni-graph@latest install
+```
+
+This installs a standalone native executable in `~/.omni-graph/bin` and initializes your memory home. Node.js is not needed to run the installed executable.
+
+### With curl
+
+On macOS or Linux, install the native release directly:
+
+```sh
+curl -fsSL https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/install.sh | sh
+```
+
+The installer verifies the archive against the release's SHA-256 checksums before running it. No Node.js, Rust toolchain, or administrator access is required.
+
+### Make the command available
+
+On macOS or Linux, add this line to your shell profile, such as `~/.zshrc` or `~/.bashrc`:
+
+```sh
+export PATH="$HOME/.omni-graph/bin:$PATH"
+```
+
+Open a new terminal, or run that line in your current terminal. On Windows, add `%USERPROFILE%\.omni-graph\bin` to your user `Path` and open a new terminal.
+
+**Platforms:** macOS Apple Silicon and Intel; Linux x64 and arm64 with glibc; Windows x64 through npx. Linux release builds require glibc 2.35+ on x64 and 2.39+ on arm64. The curl installer requires `curl`, `tar`, and `sha256sum` or `shasum`. Alpine/musl is not currently a release target.
+
+<details>
+<summary>Run without a persistent installation</summary>
+
+Prefix any command with `npx --yes omni-graph@latest`:
+
+```sh
+npx --yes omni-graph@latest init
+npx --yes omni-graph@latest
+```
+
+Your memories still persist in your user memory home and project folder.
+
+</details>
+
+## Get started
+
+Run these commands from your project's root:
+
+```sh
+omni-graph init --name "My project"
+omni-graph
+```
+
+Initialization creates the project's `.omni-graph/` folder, registers the project, and installs agent skills and instructions. It starts with an empty memory graph. Run `init` again to refresh integrations without resetting your memories.
+
+Save something worth remembering:
+
+```sh
+omni-graph remember \
+  --type lesson \
+  --title "Check every consumer before changing shared props" \
+  --body "Find the affected callers and verify each one when changing a shared component contract." \
+  --trigger "Changing a shared component or exported interface"
+```
+
+Recall relevant context before the next task:
+
+```sh
+omni-graph recall "changing a shared component" --json
+```
+
+You can run commands from any directory inside an initialized project. To work with another project, use `omni-graph --directory /path/to/project` followed by the command.
+
+## Agent setup
+
+`omni-graph init` installs the bundled memory skill and adds a clearly marked instruction block to supported agent files. Existing instructions outside that block are preserved.
+
+| Agent | Skill | Instructions |
+| --- | --- | --- |
+| Codex | `.agents/skills/omni-graph/SKILL.md` | `AGENTS.md` |
+| Claude Code | `.claude/skills/omni-graph/SKILL.md` | `CLAUDE.md` |
+| Pi | `.agents/skills/omni-graph/SKILL.md` | `AGENTS.md` |
+
+Choose integrations during initialization, or refresh them later:
+
+```sh
+omni-graph init --agent codex,claude
+omni-graph setup --agent pi
+```
+
+Use `--agent none` to initialize without writing agent integrations. Restart the agent session or reload skills if it does not discover a newly installed skill.
+
+For other agents, the JSON CLI is available directly. A useful instruction is:
+
+> Before meaningful work, recall relevant Omni-graph memories. After a verified fix, useful discovery, or user correction, save the durable lesson with its context and evidence. Keep knowledge in the appropriate scope.
+
+Skills guide agent behavior; the agent must follow them. Omni-graph does not run a language model or automatically turn every conversation into memory.
+
+## Memory that belongs in the right place
+
+| Scope | What belongs here | Where it lives |
+| --- | --- | --- |
+| **Global** | Your preferences and broadly reusable knowledge | `~/.omni-graph/memory.sqlite` |
+| **Client** | Context shared across one client's projects | `~/.omni-graph/clients/CLIENT_ID/memory.sqlite` |
+| **Project** | Architecture, decisions, constraints, lessons, and fixes | `PROJECT/.omni-graph/memory.sqlite` |
+| **Task** | Focused progress, investigation, or a handoff with a task ID | The project's database |
+
+Project scope is the default. Client memories are available only to projects associated with that client. Task memories carry a task ID so agents can retrieve the relevant work.
+
+Create a client and associate a project using the ID returned by the first command:
+
+```sh
+omni-graph client add "Your client" --json
+omni-graph init --name "Client project" --client CLIENT_ID
+```
+
+Replace `CLIENT_ID` with the returned ID. Associate the client when initializing a new project; rerunning initialization does not change project ownership.
+
+### Learn from mistakes
+
+A useful memory explains when it matters and what to do next. Record the failure, cause, prevention, evidence, and verification instead of saving an unstructured transcript.
+
+Connect records with relationships such as:
+
+```text
+mistake ──corrected_by──▶ fix
+   └──────teaches───────▶ lesson
+learning_goal ──resolved_by──▶ finding
+```
+
+Use `omni-graph remember --file memory.json` for structured records, and `omni-graph link MEMORY_ID corrected_by FIX_ID` to connect their returned IDs. Run `omni-graph review --json` to find open work, recurring mistakes, and memories due for review. Mark a fix verified only after recording verification evidence.
+
+## Explore the graph
+
+Run `omni-graph` or `omni-graph tui` inside an initialized project.
+
+- **Click** a node to inspect its memory. More connected nodes have larger solid centers.
+- **Scroll** to zoom around the pointer. **Drag the background** to pan, or drag a node to move it.
+- Connections around the selected node have repeating, staggered pulses. Press **`p`** to pause or resume.
+- Layout changes and memory selection use subtle animations. Terminal fonts and character resolution affect their appearance.
+
+| Key | Action |
+| --- | --- |
+| `/` | Search memories |
+| `j` / `k` | Select a memory |
+| Arrow keys | Pan the graph; `g` switches graph/list keyboard focus |
+| `+` / `-` | Zoom |
+| `0` / `f` | Fit the graph / center the selected node |
+| `z` | Expand or restore the graph view |
+| Tab / Enter | Select a connection / follow it |
+| Backspace | Return to the previous node |
+| `p` | Pause or resume connection flow |
+| `R` / `r` | Smoothly restore the layout / reload memories |
+| `s` / `a` | Cycle scope / include inactive history |
+| `m` | Toggle mouse capture for terminal text selection |
+| `q` | Quit |
+
+Use a terminal of at least 75 columns by 16 rows. Mouse-pointer changes require terminal support; keyboard navigation remains available.
+
+## Your data, locally
+
+```text
+~/.omni-graph/
+├── bin/omni-graph          # Installed executable (.exe on Windows)
+├── memory.sqlite          # Global memory
+├── registry.json          # Registered clients and projects
+└── clients/
+    └── CLIENT_ID/memory.sqlite
+
+YOUR_PROJECT/
+└── .omni-graph/
+    ├── project.json        # Stable project identity
+    ├── memory.sqlite      # Project and task memory
+    └── .gitignore          # Excludes local memory databases and sidecars
+```
+
+Set `OMNI_GRAPH_HOME` to use a different memory home; persistent installs put the executable in that home's `bin` directory too. Agent skills remain in each project's agent directories.
+
+Memory commands work locally. Omni-graph uses SQLite FTS5 plus graph traversal for retrieval; it does not require PostgreSQL, a vector database, or an embedding service. Omni-graph does not encrypt its databases.
+
+Project database files are ignored by the generated `.omni-graph/.gitignore`. Project identity and agent instructions can be versioned. Export includes only project/task memories explicitly marked `project_shared`:
+
+```sh
+omni-graph export --output shared-memory.json
+omni-graph import --file shared-memory.json
+```
+
+Import requires the same stable project identity. Private, client, and global memories are excluded from shared exports. Marking a memory shared does not upload or synchronize it.
+
+For backups, stop running Omni-graph processes and copy your user memory home and each project's `.omni-graph` directory.
+
+## Updates and help
+
+Rerun your installation command to update the executable. Installations preserve existing memories and registrations. Close running Omni-graph instances before updating.
+
+```sh
+omni-graph --version
+omni-graph --help
+omni-graph doctor --json
+```
+
+`doctor` runs inside an initialized project. Use `omni-graph COMMAND --help` for individual commands. To pin a curl installation to a published version:
+
+```sh
+curl -fsSL https://github.com/Rekabytes-Enterprise/omni-graph/releases/download/v0.1.0/install.sh \
+  | OMNI_GRAPH_VERSION=v0.1.0 sh
+```
+
+To uninstall the native command, remove the executable from `~/.omni-graph/bin` and remove its PATH entry from your shell profile. Your memories remain available for backup or a later installation.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before starting. Create your branch from **`dev`** and open your pull request against **`dev`**. The `main` branch is maintained for stable releases.
+
+## License
+
+[MIT](LICENSE) © 2026 Omni-graph contributors.

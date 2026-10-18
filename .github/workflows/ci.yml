@@ -1,0 +1,35 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contribution-target:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Contributions must target dev
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          if [ "$BASE_BRANCH" != dev ]; then
+            echo '::error::Create your branch from dev and target dev. Contribution PRs must not target main.'
+            exit 1
+          fi
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: npm test

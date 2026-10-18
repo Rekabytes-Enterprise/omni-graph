@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title description">
+  <title id="title">Omni-graph</title>
+  <desc id="description">Connected, local memory for AI agents. A project links decisions, lessons, fixes, and the next thing to learn.</desc>
+  <defs>
+    <radialGradient id="glow"><stop stop-color="#67e8d0" stop-opacity=".1"/><stop offset="1" stop-color="#67e8d0" stop-opacity="0"/></radialGradient>
+    <linearGradient id="edge"><stop stop-color="#67e8d0" stop-opacity=".8"/><stop offset="1" stop-color="#8295ac" stop-opacity=".3"/></linearGradient>
+  </defs>
+  <rect width="1200" height="360" rx="18" fill="#23252a"/>
+  <rect x="1" y="1" width="1198" height="358" rx="17" fill="none" stroke="#3b414c"/>
+  <circle cx="916" cy="178" r="174" fill="url(#glow)"/>
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="56" y="77" font-size="13" font-weight="600" letter-spacing="3" fill="#67e8d0">STORE · RECALL · LEARN</text>
+    <text x="52" y="158" font-size="67" font-weight="700" letter-spacing="-3" fill="#f1f3f5">omni-graph</text>
+    <text x="56" y="207" font-size="23" fill="#c3cbd6">Give your agents a memory.</text>
+    <text x="56" y="243" font-size="17" fill="#939eae">Connect the decisions, lessons, and fixes</text>
+    <text x="56" y="269" font-size="17" fill="#939eae">that make the next task better.</text>
+    <g stroke="url(#edge)" stroke-width="1.5" fill="none">
+      <path d="M899 179 Q811 96 759 91"/><path d="M915 164 Q951 89 1044 75"/>
+      <path d="M930 183 Q1037 158 1081 212"/><path d="M911 199 Q937 277 1009 293"/>
+      <path d="M890 193 Q810 266 741 254"/><path d="M765 100 Q723 169 741 243"/>
+      <path d="M1028 286 Q1099 277 1092 230"/>
+    </g>
+    <circle cx="910" cy="182" r="27" fill="none" stroke="#67e8d0" stroke-opacity=".25"/>
+    <circle cx="910" cy="182" r="14" fill="#67e8d0"/>
+    <circle cx="749" cy="88" r="8" fill="#e9c46a"/><circle cx="1053" cy="74" r="7" fill="#9cc7ff"/>
+    <circle cx="1088" cy="219" r="9" fill="#a6e3a1"/><circle cx="1018" cy="297" r="7" fill="#c4a7e7"/>
+    <circle cx="739" cy="251" r="6" fill="#f2a6a6"/>
+    <text x="910" y="232" text-anchor="middle" font-size="15" fill="#d5e0e9">Your project</text>
+    <text x="749" y="65" text-anchor="middle" font-size="14" fill="#b9c3d0">Decision</text>
+    <text x="1053" y="51" text-anchor="middle" font-size="14" fill="#b9c3d0">Lesson</text>
+    <text x="1088" y="256" text-anchor="middle" font-size="14" fill="#b9c3d0">Fix</text>
+    <text x="1018" y="329" text-anchor="middle" font-size="14" fill="#b9c3d0">Learn next</text>
+    <text x="739" y="285" text-anchor="middle" font-size="14" fill="#b9c3d0">Mistake</text>
+  </g>
+</svg>

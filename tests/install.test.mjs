@@ -15,6 +15,8 @@ function fixture(corrupt) {
   const downloads = join(temp, 'downloads');
   const mock = join(temp, 'tools');
   mkdirSync(downloads); mkdirSync(mock);
+  mkdirSync(join(temp, 'shell-home'));
+  writeFileSync(join(temp, 'shell-home/.bashrc'), '# existing shell settings\n');
   const machine = spawnSync('uname', ['-m'], { encoding: 'utf8' }).stdout.trim();
   const platform = `${process.platform}-${['arm64', 'aarch64'].includes(machine) ? 'arm64' : 'x64'}`;
   const asset = `omni-graph-${platform}.tar.gz`;
@@ -30,7 +32,7 @@ if (!url.startsWith('https://github.com/Rekabytes-Enterprise/omni-graph/releases
 fs.appendFileSync(process.env.INSTALL_TEST_LOG, url + '\\n');
 fs.copyFileSync(path.join(process.env.INSTALL_TEST_DOWNLOADS, url.split('/').at(-1)), args[args.indexOf('--output') + 1]);
 `, { mode: 0o755 });
-  return { temp, env: { ...process.env, PATH: `${mock}:${process.env.PATH}`, OMNI_GRAPH_HOME: join(temp, 'user memory'), OMNI_GRAPH_VERSION: packageVersion, INSTALL_TEST_LOG: join(temp, 'requests'), INSTALL_TEST_DOWNLOADS: downloads } };
+  return { temp, env: { ...process.env, HOME: join(temp, 'shell-home'), USERPROFILE: join(temp, 'shell-home'), SHELL: '/bin/bash', PATH: `${mock}:${process.env.PATH}`, OMNI_GRAPH_HOME: join(temp, 'user memory'), OMNI_GRAPH_VERSION: packageVersion, INSTALL_TEST_LOG: join(temp, 'requests'), INSTALL_TEST_DOWNLOADS: downloads } };
 }
 
 test('curl installer verifies a pinned release and installs into the user memory home', { skip: !unix }, () => {
@@ -46,11 +48,20 @@ test('curl installer verifies a pinned release and installs into the user memory
     assert.equal(version.status, 0, version.stderr);
     assert.match(version.stdout, /omni-graph/);
     assert.ok(readFileSync(f.env.INSTALL_TEST_LOG, 'utf8').includes(`/releases/download/v${packageVersion}/`));
+    assert.match(installed.stdout, /IMPORTANT: Run this FIRST/);
     assert.match(installed.stdout, /export PATH=/);
+    assert.match(readFileSync(join(f.env.HOME, '.bashrc'), 'utf8'), /^# existing shell settings/);
+    const fresh = spawnSync('/bin/bash', ['--noprofile', '-ic', 'command -v omni-graph && omni-graph --version'], { env: f.env, encoding: 'utf8' });
+    assert.equal(fresh.status, 0, fresh.stderr);
+    assert.ok(fresh.stdout.includes(binary));
+    const both = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', '. "$HOME/.profile"; . "$HOME/.bashrc"; printf "%s" "$PATH"'], { env: f.env, encoding: 'utf8' });
+    assert.equal(both.status, 0, both.stderr);
+    assert.equal(both.stdout.split(':').filter(entry => entry === join(f.env.OMNI_GRAPH_HOME, 'bin')).length, 1);
     delete f.env.OMNI_GRAPH_VERSION;
     const latest = spawnSync('sh', [join(root, 'install.sh')], { env: f.env, encoding: 'utf8' });
     assert.equal(latest.status, 0, latest.stderr);
     assert.match(readFileSync(f.env.INSTALL_TEST_LOG, 'utf8'), /\/releases\/latest\/download\//);
+    assert.equal(readFileSync(join(f.env.HOME, '.bashrc'), 'utf8').split('# >>> omni-graph PATH >>>').length, 2);
   } finally { rmSync(f.temp, { recursive: true, force: true }); }
 });
 

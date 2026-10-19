@@ -48,13 +48,23 @@ The installer verifies the archive against the release's SHA-256 checksums befor
 
 ### Make the command available
 
-On macOS or Linux, add this line to your shell profile, such as `~/.zshrc` or `~/.bashrc`:
+On macOS and Linux, the installer automatically creates `~/.omni-graph/` and saves a managed PATH entry in your shell configuration. Bash uses `.bashrc` and your active login profile; zsh uses `.zshrc` and `.zprofile` (including an absolute `ZDOTDIR`); fish uses its `conf.d` directory. Existing shell configuration is preserved, and reinstalls update the same entry.
+
+**For the terminal you installed from, run the activation command printed by the installer first.** With the default location on Bash or zsh:
 
 ```sh
 export PATH="$HOME/.omni-graph/bin:$PATH"
 ```
 
-Open a new terminal, or run that line in your current terminal. On Windows, add `%USERPROFILE%\.omni-graph\bin` to your user `Path` and open a new terminal.
+Then change to your project's directory and run `omni-graph init`. Future terminals load the saved PATH automatically. A child installer cannot change its parent terminal's environment. If you set `OMNI_GRAPH_HOME` to a custom location, use the exact activation command from the installer.
+
+You can also run the executable directly, without changing PATH:
+
+```sh
+"$HOME/.omni-graph/bin/omni-graph" init
+```
+
+On Windows, add `%USERPROFILE%\.omni-graph\bin` to your user `Path` and open a new terminal. If shell configuration could not be updated, the installer reports a warning and prints the manual activation command.
 
 **Platforms:** macOS Apple Silicon and Intel; Linux x64 and arm64 with glibc; Windows x64 through npx. Linux release builds require glibc 2.35+ on x64 and 2.39+ on arm64. The curl installer requires `curl`, `tar`, and `sha256sum` or `shasum`. Alpine/musl is not currently a release target.
 

@@ -1,4 +1,6 @@
-//! Persistent user installation shared by npm and the standalone shell installer.
+mod shell;
+
+// Persistent user installation shared by npm and the standalone shell installer.
 use crate::storage::{self, Lock, Store};
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
@@ -49,13 +51,16 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
             )
         })?;
     }
+    let path = shell::configure(&bin);
     if json_output {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "version": env!("CARGO_PKG_VERSION"), "home": home,
-                "binary": target, "path_modified": false,
-                "next": "Add the bin directory to PATH, then run omni-graph init in your project."
+                "binary": target, "path_modified": path.modified,
+                "path_profiles": path.profiles, "warnings": path.warnings,
+                "activate": path.command,
+                "next": "Run the activation command in this terminal, or open a new terminal. Then run omni-graph init from your project directory."
             }))?
         );
     } else {
@@ -65,19 +70,33 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
             target.display(),
             home.display()
         );
-        #[cfg(unix)]
-        println!(
-            "\nAdd this to your shell profile, then open a new terminal:\n\n  export PATH='{}':\"$PATH\"",
-            bin.display().to_string().replace('\'', "'\\''")
-        );
+        if !path.profiles.is_empty() {
+            println!("\nPATH saved for future terminals in:");
+            for profile in &path.profiles {
+                println!("  {}", profile.display());
+            }
+        }
+        for warning in &path.warnings {
+            eprintln!("Warning: {warning}");
+        }
         #[cfg(windows)]
         println!(
-            "\nAdd {} to your user PATH, then open a new terminal.",
+            "\nAdd {} to your user PATH for future terminals.",
             bin.display()
         );
         println!(
-            "\nIn your project, run:\n\n  omni-graph init\n  omni-graph\n\nExisting memories and project files are preserved."
+            "\nIMPORTANT: Run this FIRST in your current terminal:\n\n  {}\n\nThe installer cannot change the PATH of the terminal that launched it.",
+            path.command
         );
+        println!(
+            "\nThen change to your project's directory and run:\n\n  omni-graph init\n  omni-graph"
+        );
+        #[cfg(unix)]
+        println!(
+            "\nOr use the installed executable directly without changing PATH:\n\n  {} init",
+            shell::quote(&target.to_string_lossy())
+        );
+        println!("\nExisting memories and project files are preserved.");
     }
     Ok(())
 }

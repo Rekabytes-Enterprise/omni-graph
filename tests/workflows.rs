@@ -25,6 +25,9 @@ impl Fixture {
     fn cmd(&self, root: &Path, args: &[&str]) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_omni-graph"));
         cmd.env("OMNI_GRAPH_HOME", self.temp.path().join("home"))
+            .env("HOME", self.temp.path().join("shell-home"))
+            .env("USERPROFILE", self.temp.path().join("shell-home"))
+            .env("SHELL", "/bin/bash")
             .arg("--directory")
             .arg(root)
             .args(args)
@@ -697,6 +700,7 @@ fn install_initializes_the_default_user_home_without_touching_the_project() {
             .env_remove("OMNI_GRAPH_HOME")
             .env("HOME", &user)
             .env("USERPROFILE", &user)
+            .env("SHELL", "/bin/bash")
             .current_dir(&project)
             .args(["install", "--json"])
             .output()
@@ -715,6 +719,9 @@ fn install_initializes_the_default_user_home_without_touching_the_project() {
     let again = parse(
         Command::new(binary)
             .env("OMNI_GRAPH_HOME", &home)
+            .env("HOME", &user)
+            .env("USERPROFILE", &user)
+            .env("SHELL", "/bin/bash")
             .args(["install", "--json"])
             .output()
             .unwrap(),
@@ -738,4 +745,86 @@ fn reinstall_preserves_registered_projects_and_global_memories() {
             .unwrap();
     assert_eq!(registry["projects"].as_array().unwrap().len(), 1);
     assert!(Path::new(installed["binary"].as_str().unwrap()).is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn install_configures_shell_profiles_and_respects_login_profile_precedence() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("user");
+    fs::create_dir_all(&user).unwrap();
+    fs::write(user.join(".bash_profile"), "# my login config\n").unwrap();
+    fs::write(user.join(".profile"), "# not the active bash login file\n").unwrap();
+    let home = temp.path().join("custom memory ' quoted");
+    let install = || {
+        parse(
+            Command::new(env!("CARGO_BIN_EXE_omni-graph"))
+                .env("HOME", &user)
+                .env("SHELL", "/bin/bash")
+                .env("OMNI_GRAPH_HOME", &home)
+                .args(["install", "--json"])
+                .output()
+                .unwrap(),
+        )
+    };
+    let first = install();
+    assert_eq!(first["path_modified"], true);
+    assert_eq!(first["path_profiles"].as_array().unwrap().len(), 2);
+    assert!(
+        fs::read_to_string(user.join(".bash_profile"))
+            .unwrap()
+            .starts_with("# my login config\n")
+    );
+    assert_eq!(
+        fs::read_to_string(user.join(".profile")).unwrap(),
+        "# not the active bash login file\n"
+    );
+    assert_eq!(install()["path_modified"], false);
+    let command = format!(
+        "{}; command -v omni-graph",
+        first["activate"].as_str().unwrap()
+    );
+    let current = Command::new("/bin/bash")
+        .env("HOME", &user)
+        .env("PATH", "/usr/bin:/bin")
+        .args(["--noprofile", "--norc", "-c", &command])
+        .output()
+        .unwrap();
+    assert!(
+        current.status.success(),
+        "{}",
+        String::from_utf8_lossy(&current.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&current.stdout).trim(),
+        home.join("bin/omni-graph").to_string_lossy()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn install_reports_profile_errors_without_overwriting_user_configuration() {
+    let temp = tempfile::tempdir().unwrap();
+    let user = temp.path().join("user");
+    fs::create_dir_all(&user).unwrap();
+    let damaged = "# personal\n# >>> omni-graph PATH >>>\n";
+    fs::write(user.join(".bashrc"), damaged).unwrap();
+    let result = parse(
+        Command::new(env!("CARGO_BIN_EXE_omni-graph"))
+            .env("HOME", &user)
+            .env("SHELL", "/bin/bash")
+            .env("OMNI_GRAPH_HOME", temp.path().join("memory"))
+            .args(["install", "--json"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(result["warnings"].as_array().unwrap().len(), 1);
+    assert_eq!(fs::read_to_string(user.join(".bashrc")).unwrap(), damaged);
+    assert!(Path::new(result["binary"].as_str().unwrap()).is_file());
+    assert!(
+        result["activate"]
+            .as_str()
+            .unwrap()
+            .starts_with("export PATH=")
+    );
 }

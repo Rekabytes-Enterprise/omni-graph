@@ -1,6 +1,6 @@
 {
   "name": "omni-graph",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared memory and a Rust graph TUI for AI coding agents",
   "type": "module",
   "license": "MIT",

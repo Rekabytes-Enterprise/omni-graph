@@ -34,7 +34,7 @@ test('a packed npm package runs through offline npm exec without Rust sources', 
     for (const name of ['package.json', 'README.md', 'CONTRIBUTING.md', 'LICENSE']) copyFileSync(join(root, name), join(stage, name));
     for (const name of ['bin', 'skills', 'assets']) cpSync(join(root, name), join(stage, name), { recursive: true });
     copyFileSync(binary, join(native, executable));
-    const env = { ...process.env, NPM_CONFIG_CACHE: join(sandbox, 'cache'), NPM_CONFIG_UPDATE_NOTIFIER: 'false' };
+    const env = { ...process.env, HOME: join(sandbox, 'shell-home'), USERPROFILE: join(sandbox, 'shell-home'), SHELL: '/bin/bash', NPM_CONFIG_CACHE: join(sandbox, 'cache'), NPM_CONFIG_UPDATE_NOTIFIER: 'false' };
     delete env.OMNI_GRAPH_BINARY;
     const npm = (args, cwd) => spawnSync(process.execPath, [process.env.npm_execpath, ...args], { cwd, env, encoding: 'utf8' });
     const packed = npm(['pack', '--ignore-scripts', '--json', '--pack-destination', sandbox], stage);
@@ -64,6 +64,12 @@ test('a packed npm package runs through offline npm exec without Rust sources', 
     assert.equal(persistent.status, 0, persistent.stderr);
     assert.equal(persistent.stdout.trim(), `omni-graph ${version}`);
     assert.ok(JSON.parse(readFileSync(join(location.home, 'registry.json'), 'utf8')).projects.length === 1);
+    if (process.platform !== 'win32') {
+      assert.ok(location.path_profiles.length >= 1);
+      const activated = spawnSync('/bin/bash', ['--noprofile', '--norc', '-c', `${location.activate}; omni-graph --version`], { env: { ...env, PATH: '/usr/bin:/bin' }, encoding: 'utf8' });
+      assert.equal(activated.status, 0, activated.stderr);
+      assert.equal(activated.stdout.trim(), `omni-graph ${version}`);
+    }
 
   } finally {
     rmSync(sandbox, { recursive: true, force: true });

@@ -24,17 +24,17 @@ Use it across freelance work, client projects, and personal repositories. Keep s
 
 ## Install
 
-> Public installation becomes available when the first npm package and GitHub release are published. The installers and release workflow are included in this repository.
+Both installers download the compiled package from [GitHub Releases](https://github.com/Rekabytes-Enterprise/omni-graph/releases). No npm registry publication or account is required.
 
 ### With npx
 
 Requires Node.js 20 or newer for installation:
 
 ```sh
-npx --yes omni-graph@latest install
+npx --yes --package=https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/omni-graph.tgz omni-graph install
 ```
 
-This installs a standalone native executable in `~/.omni-graph/bin` and initializes your memory home. Node.js is not needed to run the installed executable.
+The GitHub release contains a ready-to-run npm tarball with native executables. This installs a standalone native executable in `~/.omni-graph/bin` and initializes your memory home. Node.js is not needed to run the installed executable.
 
 ### With curl
 
@@ -61,14 +61,14 @@ Open a new terminal, or run that line in your current terminal. On Windows, add 
 <details>
 <summary>Run without a persistent installation</summary>
 
-Prefix any command with `npx --yes omni-graph@latest`:
+Use the release tarball with npx:
 
 ```sh
-npx --yes omni-graph@latest init
-npx --yes omni-graph@latest
+npx --yes --package=https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/omni-graph.tgz omni-graph init
+npx --yes --package=https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/omni-graph.tgz omni-graph
 ```
 
-Your memories still persist in your user memory home and project folder.
+Your memories still persist in your user memory home and project folder. The short registry command `npx omni-graph@latest` is not available until the package is separately published to npm; use the GitHub URL above.
 
 </details>
 
@@ -232,8 +232,8 @@ omni-graph doctor --json
 `doctor` runs inside an initialized project. Use `omni-graph COMMAND --help` for individual commands. To pin a curl installation to a published version:
 
 ```sh
-curl -fsSL https://github.com/Rekabytes-Enterprise/omni-graph/releases/download/v0.1.0/install.sh \
-  | OMNI_GRAPH_VERSION=v0.1.0 sh
+curl -fsSL https://github.com/Rekabytes-Enterprise/omni-graph/releases/download/v0.1.1/install.sh \
+  | OMNI_GRAPH_VERSION=v0.1.1 sh
 ```
 
 To uninstall the native command, remove the executable from `~/.omni-graph/bin` and remove its PATH entry from your shell profile. Your memories remain available for backup or a later installation.

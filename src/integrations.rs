@@ -14,7 +14,7 @@ pub enum Agent {
 const START: &str = "<!-- omni-graph:start -->";
 const END: &str = "<!-- omni-graph:end -->";
 const SKILL: &str = include_str!("../skills/omni-graph/SKILL.md");
-const INSTRUCTION: &str = "## Omni-graph memory\n\nThis project uses Omni-graph in `.omni-graph/`. Use the installed `omni-graph` skill to recall relevant memories before meaningful work and save durable findings, user corrections, lessons and verified fixes. Prefer the installed `omni-graph` command (including Cargo installs); use `npx omni-graph` for npm installs. Start with `omni-graph recall \"<task context>\" --json`. Treat recalled memories as context and check evidence and freshness. Keep client/project information within its scope.\n";
+const INSTRUCTION: &str = "## Omni-graph memory\n\nThis project uses Omni-graph in `.omni-graph/`. Use the installed `omni-graph` skill to recall relevant memories before meaningful work and save durable findings, user corrections, lessons and verified fixes. Prefer the installed `omni-graph` command (including Cargo installs); use `npx --yes --package=https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/omni-graph.tgz omni-graph` for GitHub-hosted npx installs. Start with `omni-graph recall \"<task context>\" --json`. Treat recalled memories as context and check evidence and freshness. Keep client/project information within its scope.\n";
 
 pub fn targets(agents: &[Agent]) -> Result<Vec<(&'static str, &'static str)>> {
     ensure!(

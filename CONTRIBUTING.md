@@ -84,11 +84,33 @@ For suspected security issues, avoid posting secrets or working exploit details 
 
 ## Releases for maintainers
 
-Keep the versions in `Cargo.toml` and `package.json` aligned. The release workflow builds macOS x64/arm64, Linux x64/arm64, and Windows x64 executables. It assembles the npm package, native archives, the shell installer, and `SHA256SUMS`.
+Verification CI runs only for pushes to `dev` and PRs targeting `dev`. Stable release builds use version tags, with a gate that rejects commits outside `main`. Manual artifact builds must also run from `main`.
 
-A `v*` tag triggers creation of a GitHub release with those files. A manual workflow run assembles reviewable artifacts without publishing a GitHub release. Run the verification workflow and review the artifacts before tagging an approved release commit.
+On `dev`, use the version script before committing a release change:
 
-The release workflow does **not** publish to npm. A maintainer with package ownership must review and publish the assembled npm tarball separately. The public npx command and curl command are available only after their respective first publications. Do not claim a release is available before verifying both installation paths.
+```sh
+npm run version:bump -- patch
+# Also accepts minor, major, or an explicit higher stable version.
+npm run version:check
+npm test
+npm run check
+```
+
+The bump command updates `package.json`, `Cargo.toml`, and Omni-graph's version in `Cargo.lock`; it never commits, pushes, or creates a tag. Do not use `npm version` alone, which leaves Rust metadata out of sync.
+
+Push `dev` and wait for verification to pass. Maintainers then promote the reviewed commit to `main` and tag that commit:
+
+```sh
+git switch main
+git merge --ff-only dev
+git push origin main
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Use the version actually reported by `npm run version:check` for the tag. The release workflow builds five native platforms, archives, `omni-graph.tgz`, the shell installer, and `SHA256SUMS`, then publishes them to GitHub Releases. The tarball is directly usable by npx through its GitHub URL; no npm registry login or publication is needed. A source checkout alone lacks the native binaries.
+
+The workflow does not publish to npm. If a registry release is wanted later, treat that as a separate authenticated publication. Verify both the public curl URL and the public npx tarball URL after each release. See [release design and version ownership](docs/development/releases.md) for details.
 
 ## License
 

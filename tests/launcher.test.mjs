@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
@@ -11,7 +12,7 @@ const binary = join(root, 'target/debug', executable);
 test('launcher forwards arguments and exit status to the Rust binary', () => {
   const version = spawnSync(process.execPath, [launcher, '--version'], { env: { ...process.env, OMNI_GRAPH_BINARY: binary }, encoding: 'utf8' });
   assert.equal(version.status, 0, version.stderr);
-  assert.match(version.stdout, /omni-graph 0\.1\.0/);
+  assert.equal(version.stdout.trim(), `omni-graph ${JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version}`);
   const invalid = spawnSync(process.execPath, [launcher, 'not-a-command'], { env: { ...process.env, OMNI_GRAPH_BINARY: binary }, encoding: 'utf8' });
   assert.equal(invalid.status, 2);
 });

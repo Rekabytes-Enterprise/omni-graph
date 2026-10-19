@@ -7,7 +7,7 @@ main() {
     case "$(uname -s)" in
         Darwin) os=darwin ;;
         Linux) os=linux ;;
-        *) echo 'omni-graph: this installer supports macOS and Linux. On Windows, use npx omni-graph@latest install.' >&2; return 1 ;;
+        *) echo 'omni-graph: this installer supports macOS and Linux. On Windows, use npx --yes --package=https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/omni-graph.tgz omni-graph install.' >&2; return 1 ;;
     esac
     case "$(uname -m)" in
         arm64|aarch64) arch=arm64 ;;

@@ -5,8 +5,40 @@ on:
     tags: ['v*']
 permissions:
   contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Release only commits on main with matching versions
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ "$RELEASE_REF" != refs/heads/main ]; then
+            echo '::error::Manual release builds must run from main.'
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo '::error::Release tags must point to a commit on main.'
+            exit 1
+          }
+          node scripts/version.mjs check
+          if [ "$EVENT_NAME" = push ]; then
+            test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+          fi
   native:
+    needs: gate
     strategy:
       matrix:
         include:
@@ -81,7 +113,10 @@ jobs:
           fi
           node bin/omni-graph.mjs --version
           sh -n install.sh
-      - run: npm pack --pack-destination dist
+      - name: Pack the GitHub-hosted npx distribution
+        run: |
+          npm pack --pack-destination dist
+          mv "dist/omni-graph-$(node -p "require('./package.json').version").tgz" dist/omni-graph.tgz
       - name: Assemble checksums
         run: |
           cp install.sh dist/install.sh
@@ -107,4 +142,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --title "Omni-graph $RELEASE_TAG"
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes --latest --title "Omni-graph $RELEASE_TAG"

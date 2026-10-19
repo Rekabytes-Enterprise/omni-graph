@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const packageVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 const unix = process.platform !== 'win32';
 function fixture(corrupt) {
   const temp = mkdtempSync(join(tmpdir(), 'omni-graph-installer-'));
@@ -29,7 +30,7 @@ if (!url.startsWith('https://github.com/Rekabytes-Enterprise/omni-graph/releases
 fs.appendFileSync(process.env.INSTALL_TEST_LOG, url + '\\n');
 fs.copyFileSync(path.join(process.env.INSTALL_TEST_DOWNLOADS, url.split('/').at(-1)), args[args.indexOf('--output') + 1]);
 `, { mode: 0o755 });
-  return { temp, env: { ...process.env, PATH: `${mock}:${process.env.PATH}`, OMNI_GRAPH_HOME: join(temp, 'user memory'), OMNI_GRAPH_VERSION: '0.1.0', INSTALL_TEST_LOG: join(temp, 'requests'), INSTALL_TEST_DOWNLOADS: downloads } };
+  return { temp, env: { ...process.env, PATH: `${mock}:${process.env.PATH}`, OMNI_GRAPH_HOME: join(temp, 'user memory'), OMNI_GRAPH_VERSION: packageVersion, INSTALL_TEST_LOG: join(temp, 'requests'), INSTALL_TEST_DOWNLOADS: downloads } };
 }
 
 test('curl installer verifies a pinned release and installs into the user memory home', { skip: !unix }, () => {
@@ -44,7 +45,7 @@ test('curl installer verifies a pinned release and installs into the user memory
     const version = spawnSync(binary, ['--version'], { encoding: 'utf8' });
     assert.equal(version.status, 0, version.stderr);
     assert.match(version.stdout, /omni-graph/);
-    assert.match(readFileSync(f.env.INSTALL_TEST_LOG, 'utf8'), /\/releases\/download\/v0\.1\.0\//);
+    assert.ok(readFileSync(f.env.INSTALL_TEST_LOG, 'utf8').includes(`/releases/download/v${packageVersion}/`));
     assert.match(installed.stdout, /export PATH=/);
     delete f.env.OMNI_GRAPH_VERSION;
     const latest = spawnSync('sh', [join(root, 'install.sh')], { env: f.env, encoding: 'utf8' });

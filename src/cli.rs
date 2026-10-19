@@ -122,6 +122,13 @@ pub enum Command {
     Reindex,
     /// Open the interactive terminal graph
     Tui,
+    /// Open the browser graph at http://127.0.0.1:52716
+    Web {
+        #[arg(long, default_value_t = 52716)]
+        port: u16,
+        #[arg(long, help = "Print the URL without opening a browser")]
+        no_open: bool,
+    },
 }
 #[derive(Args)]
 pub struct Init {

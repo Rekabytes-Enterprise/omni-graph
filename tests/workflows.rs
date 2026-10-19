@@ -828,3 +828,135 @@ fn install_reports_profile_errors_without_overwriting_user_configuration() {
             .starts_with("export PATH=")
     );
 }
+
+struct WebProcess(std::process::Child);
+impl Drop for WebProcess {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+fn web_request(address: &str, method: &str, path: &str, headers: &str) -> String {
+    use std::{io::Read, net::TcpStream, time::Duration};
+    let mut stream = TcpStream::connect(address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    write!(
+        stream,
+        "{method} {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n{headers}\r\n"
+    )
+    .unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    response
+}
+#[test]
+fn browser_server_serves_scoped_live_memory_and_rejects_unsafe_requests() {
+    use std::io::{BufRead, BufReader};
+    let f = Fixture::new();
+    let saved =
+        f.memory(json!({"title":"Web visible memory", "body":"<script>literal text</script>"}));
+    let global = f.memory(json!({"title":"Shared global preference", "scope":"global"}));
+    let foreign = f.temp.path().join("other-project");
+    fs::create_dir(&foreign).unwrap();
+    parse(
+        f.cmd(&foreign, &["init", "--name", "Other project"])
+            .output()
+            .unwrap(),
+    );
+    parse(
+        f.cmd(
+            &foreign,
+            &["remember", "--title", "Unrelated project secret"],
+        )
+        .output()
+        .unwrap(),
+    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_omni-graph"))
+        .env("OMNI_GRAPH_HOME", f.temp.path().join("home"))
+        .args([
+            "--directory",
+            f.root().to_str().unwrap(),
+            "web",
+            "--port",
+            "0",
+            "--no-open",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut server = WebProcess(child);
+    let mut line = String::new();
+    output.read_line(&mut line).unwrap();
+    let address = line
+        .trim()
+        .strip_prefix("Omni-graph Web UI: http://")
+        .expect("server URL");
+    let response = web_request(address, "GET", "/", "");
+    assert!(response.starts_with("HTTP/1.1 200"));
+    assert!(response.contains("Memory explorer") && response.contains("Content-Security-Policy:"));
+    for path in [
+        "/app.js",
+        "/graph.js",
+        "/app.css",
+        "/view.js",
+        "/types.js",
+        "/vendor/three.module.js",
+        "/vendor/three.core.js",
+        "/vendor/OrbitControls.js",
+        "/vendor/THREE-LICENSE.txt",
+    ] {
+        assert!(web_request(address, "GET", path, "").starts_with("HTTP/1.1 200"));
+    }
+    let snapshot = || {
+        let response = web_request(address, "GET", "/api/graph", "");
+        assert!(response.starts_with("HTTP/1.1 200"));
+        serde_json::from_str::<Value>(response.split("\r\n\r\n").nth(1).unwrap()).unwrap()
+    };
+    let initial = snapshot();
+    let memories = initial["graph"]["memories"].as_array().unwrap();
+    assert_eq!(memories.len(), 2);
+    assert!(memories.iter().any(|m| m["id"] == saved["id"]));
+    assert!(memories.iter().any(|m| m["id"] == global["id"]));
+    let patch = f.temp.path().join("web-update.json");
+    fs::write(
+        &patch,
+        r#"{"body":"Agent changed this while the browser was open"}"#,
+    )
+    .unwrap();
+    f.ok(&["update", id(&saved), "--file", patch.to_str().unwrap()]);
+    assert!(
+        snapshot()["graph"]["memories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["body"].as_str().unwrap().contains("Agent changed"))
+    );
+    assert!(
+        web_request(address, "POST", "/api/graph", "Content-Length: 0\r\n")
+            .starts_with("HTTP/1.1 405")
+    );
+    assert!(
+        web_request(
+            address,
+            "GET",
+            "/api/graph",
+            "Origin: https://example.com\r\n"
+        )
+        .starts_with("HTTP/1.1 403")
+    );
+    assert!(
+        web_request(
+            address,
+            "GET",
+            "/api/graph",
+            "Sec-Fetch-Site: cross-site\r\n"
+        )
+        .starts_with("HTTP/1.1 403")
+    );
+    assert!(web_request(address, "GET", "/../../Cargo.toml", "").starts_with("HTTP/1.1 404"));
+    assert!(server.0.try_wait().unwrap().is_none());
+}

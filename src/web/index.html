@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Omni-graph · Memory explorer</title><link rel="icon" href="data:,">
+<link rel="stylesheet" href="/app.css"><script type="module" src="/app.js"></script>
+</head>
+<body>
+<header><a class="brand" href="/" aria-label="Omni-graph home"><span class="brand-mark">◉</span> OMNI-GRAPH</a><span class="divider">/</span><span id="project">Memory explorer</span><span id="connection" role="status">Connecting…</span></header>
+<main>
+<aside class="library">
+<div class="eyebrow">A LITTLE CONTEXT GOES A LONG WAY</div><h1>Keep the context<span>.</span></h1>
+<p class="intro">Every fix. Every lesson. Every little breakthrough.</p>
+<label class="search"><span>⌕</span><input id="search" type="search" placeholder="Search your memories" aria-label="Search memories"></label>
+<div class="filters"><label>Scope<select id="scope"><option value="">All scopes</option><option>global</option><option>client</option><option>project</option><option>task</option></select></label><label>Type<select id="kind"><option value="">All types</option></select></label></div>
+<label class="toggle"><input id="inactive" type="checkbox"> Include inactive memories</label>
+<div class="library-stats"><div><strong id="total-nodes">0</strong><span>memories</span></div><div><strong id="total-edges">0</strong><span>connections</span></div><div><strong id="total-types">0</strong><span>types</span></div></div><div class="list-heading"><span>MEMORIES</span><span id="count">0</span></div><div id="memories" class="memory-list" aria-label="Memories"></div>
+<footer>Local memory. Your machine.<br><span>Agents save through the Omni-graph CLI.</span></footer>
+</aside>
+<section class="workspace" aria-label="Interactive memory graph">
+<div class="graph-heading"><div class="eyebrow">YOUR CONNECTED MEMORY</div><h2>Knowledge, in orbit <span class="mode-badge">3D</span></h2></div>
+<div id="legend" class="legend" aria-label="Memory type colors"></div><div class="tools"><button id="fit" title="Fit all nodes (F)">Reset view <kbd>F</kbd></button><button id="flow" aria-pressed="true">Pause flow</button><button id="refresh">Refresh</button></div>
+<div id="graph" tabindex="0" role="application" aria-label="3D memory graph. Drag to orbit 360 degrees, right-drag or Shift-drag to pan, scroll to zoom. Select memories using the list or click a sphere."></div>
+<div id="empty" class="empty" hidden><span>◌</span><h2>Your graph starts here</h2><p>Save a memory with your agent or the CLI.<br>Connections will appear as your knowledge grows.</p><code>omni-graph remember --help</code></div>
+<div class="graph-footer"><span><i></i> Drag to orbit 360° <b>·</b> Right-drag to pan <b>·</b> Scroll to zoom</span><div><button id="zoom-out" aria-label="Zoom out">−</button><output id="zoom">100%</output><button id="zoom-in" aria-label="Zoom in">+</button></div></div>
+<article id="details" hidden aria-label="Selected memory"><div class="detail-head"><span class="eyebrow">MEMORY DETAILS</span><button id="close" aria-label="Close details">×</button></div><div id="detail-body"></div></article>
+</section>
+</main>
+</body></html>

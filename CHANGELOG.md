@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- Choose Web UI or TUI when running `omni-graph`; direct `web` and `tui` commands bypass the menu.
+- Explore local memories in an embedded browser UI at `http://127.0.0.1:52716`, with pan, zoom, draggable 3D sphere nodes, full 360° orbit and tilt, curved animated connections, filters and details.
+- Give memory types distinct colors and icons across spheres, lists, details and a clickable legend, with soft glow and a depth grid.
+- Refresh agent-saved memories automatically, using the same scoped workspace snapshot as the CLI and TUI.
+- Serve assets offline from the native executable with loopback-only, read-only HTTP routes.
+
 ## 0.1.2
 
 - Automatically save the installed bin directory in supported Unix shell startup files for future terminals.

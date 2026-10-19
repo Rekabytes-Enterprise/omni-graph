@@ -63,7 +63,19 @@ pub fn run(cli: Cli) -> Result<()> {
     let start = cli.directory.unwrap_or(std::env::current_dir()?);
     let home = std::path::absolute(storage::home()?)?;
     let output = cli.json;
-    let command = cli.command.unwrap_or(Command::Tui);
+    let command = match cli.command {
+        Some(command) => command,
+        None => {
+            ensure!(
+                !output,
+                "choose an explicit command with --json, such as graph or list"
+            );
+            let Some(command) = crate::ui::choose()? else {
+                return Ok(());
+            };
+            command
+        }
+    };
     match command {
         Command::Install => return crate::install::run(&home, output),
         Command::Init(args) => return init(&start, &home, args, output),
@@ -251,6 +263,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 "TUI cannot emit JSON; use graph, list, or recall with --json"
             );
             tui::run(&workspace)
+        }
+        Command::Web { port, no_open } => {
+            ensure!(
+                !output,
+                "Web UI cannot emit JSON; use graph, list, or recall with --json"
+            );
+            crate::web::run(&workspace, port, !no_open)
         }
         Command::Install | Command::Init(_) | Command::Client { .. } => unreachable!(),
     }

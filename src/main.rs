@@ -8,6 +8,8 @@ mod retrieval;
 mod storage;
 mod transfer;
 mod tui;
+mod ui;
+mod web;
 
 use clap::Parser;
 fn main() {

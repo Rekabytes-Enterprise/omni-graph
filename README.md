@@ -19,7 +19,7 @@ Use it across freelance work, client projects, and personal repositories. Keep s
 - **Remember with context.** Store decisions, constraints, lessons, mistakes, fixes, learning goals, and handoffs.
 - **Retrieve before acting.** Search with SQLite FTS5 and recall related memories through graph connections.
 - **Learn from the last attempt.** Connect failures to fixes, lessons, and verification evidence.
-- **See the relationships.** Explore a Rust terminal graph with search, pan, zoom, draggable nodes, and animated connections.
+- **See the relationships.** Explore a browser or Rust terminal graph with search, pan, zoom, draggable nodes, and animated connections.
 - **Keep control of your data.** Local SQLite storage, explicit sharing, and no database server or account required.
 
 ## Install
@@ -172,7 +172,20 @@ Use `omni-graph remember --file memory.json` for structured records, and `omni-g
 
 ## Explore the graph
 
-Run `omni-graph` or `omni-graph tui` inside an initialized project.
+Run `omni-graph` inside an initialized project, then choose **Web UI** or **TUI** with the arrow keys and Enter (or press `1` / `2`).
+
+**Web UI** starts a local server and opens your browser at **http://127.0.0.1:52716**. Explore a true 3D graph with sphere nodes, curved connections, search, scope/type filters and memory details. Drag the background to orbit through 360° and tilt the view. Right-drag or Shift-drag to pan, scroll to zoom, or drag individual spheres to arrange them. On touchscreens, use one finger to orbit and two fingers to pan/zoom. Highly connected nodes have larger solid centers. Memory types have distinct colors and icons: issues are rose, mistakes coral, fixes mint, lessons amber and decisions violet. Click a type in the legend to filter the graph. Select a node to animate its connections; use **Pause flow** to stop animation. Agent changes refresh automatically every four seconds. Layout changes are temporary; memories are managed through the CLI.
+
+```sh
+omni-graph web                  # Open the browser graph directly
+omni-graph web --no-open        # Print the URL without launching a browser
+omni-graph web --port 52717     # Use another port if 52716 is busy
+omni-graph tui                  # Open the terminal graph directly
+```
+
+The server listens on this machine only. Keep the terminal running while using the Web UI; press **Ctrl+C** to stop it. Both views use the same existing SQLite memories and scope boundaries. No frontend setup or internet connection is required. The 3D view needs a browser with WebGL2 enabled.
+
+**TUI controls**
 
 - **Click** a node to inspect its memory. More connected nodes have larger solid centers.
 - **Scroll** to zoom around the pointer. **Drag the background** to pan, or drag a node to move it.

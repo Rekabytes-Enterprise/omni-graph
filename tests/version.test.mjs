@@ -14,14 +14,18 @@ test('stable version bumps handle patch, minor, major, and explicit versions', (
     assert.throws(() => nextVersion('0.1.0', invalid));
   }
 });
-test('version bump updates all three sources and preserves unrelated lock entries', () => {
+test('version bump updates manifests and lockfiles and preserves unrelated lock entries', () => {
   const root = mkdtempSync(join(tmpdir(), 'omni-graph-version-'));
   try {
     writeFileSync(join(root, 'package.json'), '{"name":"omni-graph","version":"0.1.0"}\n');
     writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "omni-graph"\nversion = "0.1.0"\n[dependencies]\nother = "0.1.0"\n');
     writeFileSync(join(root, 'Cargo.lock'), 'version = 4\n\n[[package]]\nname = "omni-graph"\nversion = "0.1.0"\n\n[[package]]\nname = "other"\nversion = "0.1.0"\n');
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({version:'0.1.0', packages:{'':{version:'0.1.0'},'node_modules/three':{version:'0.186.1'}}}));
     assert.deepEqual(bumpVersion(root, 'patch'), { previous: '0.1.0', version: '0.1.1' });
     assert.equal(readVersion(root), '0.1.1');
+    const npmLock = JSON.parse(readFileSync(join(root, 'package-lock.json')));
+    assert.equal(npmLock.version, '0.1.1'); assert.equal(npmLock.packages[''].version, '0.1.1');
+    assert.equal(npmLock.packages['node_modules/three'].version, '0.186.1');
     assert.match(readFileSync(join(root, 'Cargo.lock'), 'utf8'), /name = "other"\nversion = "0.1.0"/);
     assert.match(readFileSync(join(root, 'Cargo.toml'), 'utf8'), /other = "0.1.0"/);
     const before = readFileSync(join(root, 'Cargo.toml'), 'utf8');

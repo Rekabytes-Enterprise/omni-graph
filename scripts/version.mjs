@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,7 +21,12 @@ function source(directory) {
   if (cargo.match(cargoPattern)?.[2] !== pkg.version || lock.match(lockPattern)?.[2] !== pkg.version) {
     throw new Error('package.json, Cargo.toml, and the Omni-graph entry in Cargo.lock must have the same version.');
   }
-  return { pkg, cargo, lock };
+  const npmPath = join(directory, 'package-lock.json');
+  const npmLock = existsSync(npmPath) ? JSON.parse(readFileSync(npmPath, 'utf8')) : null;
+  if (npmLock && (npmLock.version !== pkg.version || npmLock.packages?.['']?.version !== pkg.version)) {
+    throw new Error('package-lock.json must have the same version as package.json.');
+  }
+  return { pkg, cargo, lock, npmLock };
 }
 export function readVersion(directory = root) { return source(directory).pkg.version; }
 export function nextVersion(current, requested) {
@@ -42,7 +47,7 @@ export function nextVersion(current, requested) {
   return version;
 }
 export function bumpVersion(directory, requested) {
-  const { pkg, cargo, lock } = source(directory);
+  const { pkg, cargo, lock, npmLock } = source(directory);
   const previous = pkg.version;
   const version = nextVersion(previous, requested);
   const updatedCargo = cargo.replace(cargoPattern, (_, start, old, end) => start + version + end);
@@ -51,16 +56,20 @@ export function bumpVersion(directory, requested) {
   writeFileSync(join(directory, 'package.json'), JSON.stringify({ ...pkg, version }, null, 2) + '\n');
   writeFileSync(join(directory, 'Cargo.toml'), updatedCargo);
   writeFileSync(join(directory, 'Cargo.lock'), updatedLock);
+  if (npmLock) {
+    npmLock.version = version; npmLock.packages[''].version = version;
+    writeFileSync(join(directory, 'package-lock.json'), JSON.stringify(npmLock, null, 2) + '\n');
+  }
   return { previous, version };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const action = process.argv[2];
     if (process.argv.length !== 3) throw new Error('Usage: node scripts/version.mjs check|patch|minor|major|VERSION');
-    if (action === 'check') console.log(`Version ${readVersion()}: package.json, Cargo.toml, Cargo.lock agree.`);
+    if (action === 'check') console.log(`Version ${readVersion()}: package.json, Cargo.toml, Cargo.lock and any npm lockfile agree.`);
     else {
       const result = bumpVersion(root, action);
-      console.log(`${result.previous} → ${result.version}\nUpdated package.json, Cargo.toml, and Cargo.lock. No commit or tag was created.`);
+      console.log(`${result.previous} → ${result.version}\nUpdated package.json, Cargo.toml, Cargo.lock and any npm lockfile. No commit or tag was created.`);
     }
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

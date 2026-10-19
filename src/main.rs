@@ -9,6 +9,7 @@ mod storage;
 mod transfer;
 mod tui;
 mod ui;
+mod update;
 mod web;
 
 use clap::Parser;

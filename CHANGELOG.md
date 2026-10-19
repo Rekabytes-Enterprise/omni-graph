@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- Make bare `omni-graph update` update the application from GitHub Releases, including outside a project directory.
+- Preserve `update MEMORY_ID --file patch.json` for memory edits; reject incomplete memory-edit arguments.
+- Verify checksums, archive entries and executable versions before replacing an installation, with Windows-aware self replacement.
+- Recognize an already-active PATH during installation and clarify that existing projects do not need reinitialization.
+
 ## 0.2.0
 
 - Choose Web UI or TUI when running `omni-graph`; direct `web` and `tui` commands bypass the menu.

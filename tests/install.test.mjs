@@ -49,6 +49,10 @@ test('curl installer verifies a pinned release and installs into the user memory
     assert.match(version.stdout, /omni-graph/);
     assert.ok(readFileSync(f.env.INSTALL_TEST_LOG, 'utf8').includes(`/releases/download/v${packageVersion}/`));
     assert.match(installed.stdout, /IMPORTANT: Run this FIRST/);
+    const active = spawnSync(binary, ['install'], { env: { ...f.env, PATH: `${join(f.env.OMNI_GRAPH_HOME, 'bin')}:${f.env.PATH}` }, encoding: 'utf8' });
+    assert.equal(active.status, 0, active.stderr);
+    assert.match(active.stdout, /Ready to use in this terminal/);
+    assert.doesNotMatch(active.stdout, /IMPORTANT: Run this FIRST/);
     assert.match(installed.stdout, /export PATH=/);
     assert.match(readFileSync(join(f.env.HOME, '.bashrc'), 'utf8'), /^# existing shell settings/);
     const fresh = spawnSync('/bin/bash', ['--noprofile', '-ic', 'command -v omni-graph && omni-graph --version'], { env: f.env, encoding: 'utf8' });

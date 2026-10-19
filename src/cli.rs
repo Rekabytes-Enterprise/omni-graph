@@ -65,11 +65,19 @@ pub enum Command {
     },
     /// Show a memory and its relationships
     Show { id: String },
-    /// Patch mutable memory fields from JSON; scope and ownership stay fixed
+    /// Update the application, or edit a memory with ID and --file
     Update {
-        id: String,
-        #[arg(long, help = "JSON object file, or - for stdin")]
-        file: PathBuf,
+        #[arg(
+            requires = "file",
+            help = "Memory ID to edit; omit to update the application"
+        )]
+        id: Option<String>,
+        #[arg(
+            long,
+            requires = "id",
+            help = "Memory JSON patch file, or - for stdin; requires ID"
+        )]
+        file: Option<PathBuf>,
     },
     /// Add a directed graph edge; supersedes also retires the old memory
     Link {
@@ -232,5 +240,32 @@ impl Filter {
                 .topic
                 .as_ref()
                 .is_none_or(|t| m.data.topics.iter().any(|v| v.eq_ignore_ascii_case(t)))
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+    #[test]
+    fn update_distinguishes_application_updates_from_memory_patches() {
+        let app = Cli::try_parse_from(["omni-graph", "update"]).unwrap();
+        assert!(matches!(
+            app.command,
+            Some(Command::Update {
+                id: None,
+                file: None
+            })
+        ));
+        let memory =
+            Cli::try_parse_from(["omni-graph", "update", "mem_example", "--file", "-"]).unwrap();
+        assert!(matches!(
+            memory.command,
+            Some(Command::Update {
+                id: Some(_),
+                file: Some(_)
+            })
+        ));
+        assert!(Cli::try_parse_from(["omni-graph", "update", "mem_example"]).is_err());
+        assert!(Cli::try_parse_from(["omni-graph", "update", "--file", "-"]).is_err());
     }
 }

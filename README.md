@@ -244,7 +244,15 @@ For backups, stop running Omni-graph processes and copy your user memory home an
 
 ## Updates and help
 
-Rerun your installation command to update the executable. Installations preserve existing memories and registrations. Close running Omni-graph instances before updating.
+Run `omni-graph update` from any directory to update the installed application from GitHub Releases. It verifies the release checksum and executable version before replacing the binary, and preserves memories, project registrations and agent skills. Close other running Omni-graph instances before updating.
+
+```sh
+omni-graph update
+```
+
+Application updates require **v0.2.1 or later**. If you have an older version, rerun the curl or GitHub-hosted npx installation command once to upgrade. There is no need to run `init` again for an existing project.
+
+To edit a memory instead, supply both its ID and a JSON patch: `omni-graph update MEMORY_ID --file patch.json`. Supplying just one argument is rejected; it never starts an application update.
 
 ```sh
 omni-graph --version

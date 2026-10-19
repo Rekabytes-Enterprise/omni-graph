@@ -78,6 +78,10 @@ pub fn run(cli: Cli) -> Result<()> {
     };
     match command {
         Command::Install => return crate::install::run(&home, output),
+        Command::Update {
+            id: None,
+            file: None,
+        } => return crate::update::run(&home, output),
         Command::Init(args) => return init(&start, &home, args, output),
         Command::Client { command } => return clients(&home, command, output),
         Command::Project {
@@ -186,7 +190,11 @@ pub fn run(cli: Cli) -> Result<()> {
                 .collect();
             emit(json!({"memory": memory, "edges": edges}), output)
         }
-        Command::Update { id, file } => emit(patch(&workspace, &id, input(&file)?)?, output),
+        Command::Update {
+            id: Some(id),
+            file: Some(file),
+        } => emit(patch(&workspace, &id, input(&file)?)?, output),
+        Command::Update { .. } => unreachable!("clap requires both memory ID and file"),
         Command::Link { from, relation, to } => emit(link(&workspace, from, relation, to)?, output),
         Command::Unlink { from, relation, to } => {
             let source = workspace.find(&from)?;

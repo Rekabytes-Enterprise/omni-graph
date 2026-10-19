@@ -197,7 +197,7 @@ On first use, Omni-graph downloads and verifies a pinned `cloudflared` helper in
 
 Press **Ctrl+C** to stop the server and revoke the tunnel. Each session gets a new URL. These [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) are temporary and have no uptime guarantee. For access over an existing SSH connection without a tunnel provider, run `omni-graph web --no-open` and forward local port 52716 to the server's `127.0.0.1:52716` in Termius.
 
-The server listens on this machine only. Keep the terminal running while using the Web UI; press **Ctrl+C** to stop it. Both views use the same existing SQLite memories and scope boundaries. No frontend setup or internet connection is required. The 3D view needs a browser with WebGL2 enabled.
+The origin server listens only on loopback. Keep the terminal running while using the Web UI; press **Ctrl+C** to stop it. Both views use the same existing SQLite memories and scope boundaries. Local Web UI and TUI work offline; Remote mode requires an internet connection. No frontend setup is required. The 3D view needs a browser with WebGL2 enabled.
 
 **TUI controls**
 

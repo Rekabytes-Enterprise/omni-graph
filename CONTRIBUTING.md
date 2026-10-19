@@ -6,7 +6,7 @@ Thank you for helping improve Omni-graph. Bug reports, documentation, agent inte
 
 **Create every contribution branch from `dev`. Open every contribution pull request against `dev`, never `main`.**
 
-`main` is the stable release branch and is maintained by the maintainers. A check rejects contribution PRs targeting another branch.
+`main` is the stable release branch and is maintained by the maintainers. Verification CI runs only on dev pushes and pull requests targeting dev; pull requests to other branches do not run that workflow.
 
 1. Fork the repository and clone your fork.
 2. Add the upstream repository and fetch its branches.

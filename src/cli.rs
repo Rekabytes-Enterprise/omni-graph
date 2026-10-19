@@ -131,12 +131,37 @@ pub enum Command {
     /// Open the interactive terminal graph
     Tui,
     /// Open the browser graph at http://127.0.0.1:52716
-    Web {
-        #[arg(long, default_value_t = 52716)]
-        port: u16,
-        #[arg(long, help = "Print the URL without opening a browser")]
-        no_open: bool,
-    },
+    Web(Web),
+}
+#[derive(Args)]
+pub struct Web {
+    #[arg(long, default_value_t = 52716)]
+    pub port: u16,
+    #[arg(long, help = "Print the local URL without opening a browser")]
+    pub no_open: bool,
+    #[arg(
+        long,
+        help = "Generate a temporary HTTPS tunnel protected by email/PIN sign-in"
+    )]
+    pub remote: bool,
+    #[arg(
+        long,
+        requires = "remote",
+        value_delimiter = ',',
+        value_name = "EMAIL",
+        help = "Email allowed to sign in; repeat to allow others. Prompts when omitted in an interactive terminal"
+    )]
+    pub email: Vec<String>,
+}
+impl Default for Web {
+    fn default() -> Self {
+        Self {
+            port: 52716,
+            no_open: false,
+            remote: false,
+            email: vec![],
+        }
+    }
 }
 #[derive(Args)]
 pub struct Init {
@@ -267,5 +292,31 @@ mod update_tests {
         ));
         assert!(Cli::try_parse_from(["omni-graph", "update", "mem_example"]).is_err());
         assert!(Cli::try_parse_from(["omni-graph", "update", "--file", "-"]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod remote_tests {
+    use super::*;
+    #[test]
+    fn remote_email_arguments_are_explicit_and_repeatable() {
+        let cli = Cli::try_parse_from([
+            "omni-graph",
+            "web",
+            "--remote",
+            "--email",
+            "one@example.com,two@example.com",
+            "--email",
+            "three@example.com",
+        ])
+        .unwrap();
+        let Some(Command::Web(args)) = cli.command else {
+            panic!("expected web options")
+        };
+        assert!(args.remote);
+        assert_eq!(args.email.len(), 3);
+        assert_eq!(args.port, 52716);
+        assert!(Cli::try_parse_from(["omni-graph", "web", "--email", "one@example.com"]).is_err());
+        assert!(Cli::try_parse_from(["omni-graph", "web", "--remote"]).is_ok());
     }
 }

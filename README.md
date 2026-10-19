@@ -172,7 +172,7 @@ Use `omni-graph remember --file memory.json` for structured records, and `omni-g
 
 ## Explore the graph
 
-Run `omni-graph` inside an initialized project, then choose **Web UI** or **TUI** with the arrow keys and Enter (or press `1` / `2`).
+Run `omni-graph` inside an initialized project, then choose **Web UI**, **TUI**, or **Remote** with the arrow keys and Enter (or press `1` / `2` / `3`).
 
 **Web UI** starts a local server and opens your browser at **http://127.0.0.1:52716**. Explore a true 3D graph with sphere nodes, curved connections, search, scope/type filters and memory details. Drag the background to orbit through 360° and tilt the view. Right-drag or Shift-drag to pan, scroll to zoom, or drag individual spheres to arrange them. On touchscreens, use one finger to orbit and two fingers to pan/zoom. Highly connected nodes have larger solid centers. Memory types have distinct colors and icons: issues are rose, mistakes coral, fixes mint, lessons amber and decisions violet. Click a type in the legend to filter the graph. Select a node to animate its connections; use **Pause flow** to stop animation. Agent changes refresh automatically every four seconds. Layout changes are temporary; memories are managed through the CLI.
 
@@ -182,6 +182,20 @@ omni-graph web --no-open        # Print the URL without launching a browser
 omni-graph web --port 52717     # Use another port if 52716 is busy
 omni-graph tui                  # Open the terminal graph directly
 ```
+
+**Using a headless server?** Generate a temporary HTTPS link with email/PIN sign-in:
+
+```sh
+omni-graph web --remote --email you@example.com
+```
+
+Replace `you@example.com` with your own email. Open the generated `https://….trycloudflare.com` link in your own device's browser, enter that email and request a PIN, then enter the PIN from your inbox. Ubuntu does not need a browser. Keep your PIN private; Omni-graph never asks for it in the terminal.
+
+The startup menu also offers **Remote** and prompts for an email. To allow additional people, repeat `--email` or provide a comma-separated list. Exact email addresses are required; wildcard domains are rejected.
+
+On first use, Omni-graph downloads and verifies a pinned `cloudflared` helper into `~/.omni-graph/tools/cloudflared/`. No administrator access, Cloudflare account or domain is required. The helper uses an isolated configuration and does not change your existing Cloudflare setup. Remote traffic passes through Cloudflare; its email sign-in protects the tunnel before requests reach the memory API. Remote access is opt-in and prints the link without opening a browser on the server.
+
+Press **Ctrl+C** to stop the server and revoke the tunnel. Each session gets a new URL. These [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) are temporary and have no uptime guarantee. For access over an existing SSH connection without a tunnel provider, run `omni-graph web --no-open` and forward local port 52716 to the server's `127.0.0.1:52716` in Termius.
 
 The server listens on this machine only. Keep the terminal running while using the Web UI; press **Ctrl+C** to stop it. Both views use the same existing SQLite memories and scope boundaries. No frontend setup or internet connection is required. The 3D view needs a browser with WebGL2 enabled.
 

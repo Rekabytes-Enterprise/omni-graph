@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- Add Remote access to the startup menu and `web --remote --email EMAIL` for headless servers.
+- Generate temporary HTTPS links protected by Cloudflare email/PIN sign-in, with a pinned checksum-verified helper downloaded automatically.
+- Keep the origin server on loopback and accept only the exact generated tunnel origin.
+- Stop and reap the tunnel on Ctrl+C, termination, SSH disconnect, startup failure or helper exit; keep existing Cloudflare configuration isolated.
+
 ## 0.2.1
 
 - Make bare `omni-graph update` update the application from GitHub Releases, including outside a project directory.

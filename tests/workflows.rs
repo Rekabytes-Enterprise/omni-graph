@@ -960,3 +960,34 @@ fn browser_server_serves_scoped_live_memory_and_rejects_unsafe_requests() {
     assert!(web_request(address, "GET", "/../../Cargo.toml", "").starts_with("HTTP/1.1 404"));
     assert!(server.0.try_wait().unwrap().is_none());
 }
+
+#[test]
+fn remote_access_rejects_missing_or_invalid_email_before_starting_services() {
+    let f = Fixture::new();
+    for emails in [
+        vec![],
+        vec!["--email", "*@example.com"],
+        vec!["--email", "not-an-email"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_omni-graph"))
+            .env("OMNI_GRAPH_HOME", f.temp.path().join("home"))
+            .args([
+                "--directory",
+                f.root().to_str().unwrap(),
+                "web",
+                "--remote",
+                "--port",
+                "0",
+            ])
+            .args(emails)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(
+            output.stdout.is_empty(),
+            "must not start a listener/helper before validation"
+        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("email"));
+        assert!(!f.temp.path().join("home/tools").exists());
+    }
+}

@@ -1,5 +1,5 @@
 //! Startup choice; explicit subcommands remain usable without a terminal.
-use crate::cli::Command;
+use crate::cli::{Command, Web};
 use anyhow::{Result, ensure};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -27,14 +27,14 @@ pub fn choose() -> Result<Option<Command>> {
                 let rows = Layout::vertical([
                     Constraint::Fill(1),
                     Constraint::Length(2),
-                    Constraint::Length(4),
+                    Constraint::Length(5),
                     Constraint::Length(2),
                     Constraint::Fill(1),
                 ])
                 .split(area);
                 let width = Layout::horizontal([
                     Constraint::Fill(1),
-                    Constraint::Max(58),
+                    Constraint::Max(68),
                     Constraint::Fill(1),
                 ]);
                 frame.render_widget(
@@ -48,6 +48,7 @@ pub fn choose() -> Result<Option<Command>> {
                 let items = [
                     ListItem::new("1  Web UI   · Browser graph at 127.0.0.1:52716"),
                     ListItem::new("2  TUI      · Stay in your terminal"),
+                    ListItem::new("3  Remote   · HTTPS link with email/PIN protection"),
                 ];
                 frame.render_stateful_widget(
                     List::new(items).highlight_symbol("› ").highlight_style(
@@ -73,23 +74,32 @@ pub fn choose() -> Result<Option<Command>> {
                         return Ok(None);
                     }
                     KeyCode::Up | KeyCode::Down | KeyCode::Tab | KeyCode::Char('j' | 'k') => {
-                        selected = 1 - selected
+                        selected = if key.code == KeyCode::Up || key.code == KeyCode::Char('k') {
+                            (selected + 2) % 3
+                        } else {
+                            (selected + 1) % 3
+                        }
                     }
                     KeyCode::Char('1') => {
-                        return Ok(Some(Command::Web {
-                            port: 52716,
-                            no_open: false,
-                        }));
+                        return Ok(Some(Command::Web(Web::default())));
                     }
                     KeyCode::Char('2') => return Ok(Some(Command::Tui)),
+                    KeyCode::Char('3') => {
+                        return Ok(Some(Command::Web(Web {
+                            remote: true,
+                            ..Web::default()
+                        })));
+                    }
                     KeyCode::Enter => {
                         return Ok(Some(if selected == 0 {
-                            Command::Web {
-                                port: 52716,
-                                no_open: false,
-                            }
-                        } else {
+                            Command::Web(Web::default())
+                        } else if selected == 1 {
                             Command::Tui
+                        } else {
+                            Command::Web(Web {
+                                remote: true,
+                                ..Web::default()
+                            })
                         }));
                     }
                     _ => (),

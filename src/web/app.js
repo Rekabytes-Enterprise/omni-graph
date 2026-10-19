@@ -92,7 +92,7 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const next = await response.json(), signature = JSON.stringify(next);
     $('project').textContent = next.project.name;
-    $('connection').textContent = '● Connected · local'; $('connection').classList.remove('error');
+    $('connection').textContent = next.access === 'remote' ? '● Connected · protected tunnel' : '● Connected · local'; $('connection').classList.remove('error');
     if (signature !== lastSignature) {
       data = next; lastSignature = signature;
       const previous = $('kind').value;

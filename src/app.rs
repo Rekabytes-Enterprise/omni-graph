@@ -272,12 +272,12 @@ pub fn run(cli: Cli) -> Result<()> {
             );
             tui::run(&workspace)
         }
-        Command::Web { port, no_open } => {
+        Command::Web(args) => {
             ensure!(
                 !output,
                 "Web UI cannot emit JSON; use graph, list, or recall with --json"
             );
-            crate::web::run(&workspace, port, !no_open)
+            crate::web::run(&workspace, args)
         }
         Command::Install | Command::Init(_) | Command::Client { .. } => unreachable!(),
     }

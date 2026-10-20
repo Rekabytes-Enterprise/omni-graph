@@ -44,7 +44,7 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
-    /// Save a memory, lesson, mistake, fix, learning goal, or graph entity
+    /// Save a memory with optional atomic links supplied in its JSON object
     Remember(Box<Remember>),
     /// List accessible memories
     List(Filter),
@@ -207,7 +207,10 @@ pub enum ProjectCommand {
 }
 #[derive(Args)]
 pub struct Remember {
-    #[arg(long, help = "Memory JSON object file, or - for stdin")]
+    #[arg(
+        long,
+        help = "Memory JSON object with optional links array, or - for stdin"
+    )]
     pub file: Option<PathBuf>,
     #[arg(long)]
     pub title: Option<String>,

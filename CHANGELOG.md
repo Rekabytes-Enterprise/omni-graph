@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4
+
+- Allow `remember --file` to save a memory and optional incoming/outgoing links in one transaction, with rollback of edges, supersession changes, and search entries on failure.
+- Keep standalone memory creation unchanged when links are absent or empty; share scope and relationship validation with the existing link command.
+
 ## 0.2.3
 
 - Improve the memory skill with capture-and-connect, evidence-lineage, and graph-maintenance guides; verify relationships without forcing standalone records into the graph.

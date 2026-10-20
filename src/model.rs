@@ -235,6 +235,26 @@ pub struct Edge {
     pub relation: Relation,
     pub to: String,
 }
+
+/// One endpoint is the newly created memory; the other must already exist.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateLink {
+    pub relation: Relation,
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+impl CreateLink {
+    pub fn endpoint(&self) -> Result<&str> {
+        match (&self.from, &self.to) {
+            (Some(id), None) | (None, Some(id)) => {
+                ensure!(valid_id(id, "mem"), "link endpoint must be a memory ID");
+                Ok(id)
+            }
+            _ => bail!("each link requires exactly one of from or to"),
+        }
+    }
+}
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Graph {
     pub schema_version: u32,

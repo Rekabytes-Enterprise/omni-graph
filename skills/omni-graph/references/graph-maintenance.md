@@ -43,6 +43,8 @@ when only graph metadata changed.
 
 If an automatic writer repeatedly omits links, report the integration gap. A skill
 cannot enforce writes made outside its workflow. Writers need explicit parent or
-evidence IDs, validation of relation direction/scope, and recovery for a successful
-record write followed by a failed edge write. Atomic record-and-edge creation is
-not currently provided by the CLI; do not claim otherwise.
+evidence IDs and validation of relation direction/scope. Prefer the optional
+`links` array in `remember --file` for new records so the memory and supplied
+relationships commit together. This does not infer missing relationships or make
+separate `update`/`link` calls atomic. Existing graph repairs still use those
+commands and must verify each result.

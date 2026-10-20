@@ -46,6 +46,9 @@ impl Fixture {
         String::from_utf8(out.stderr).unwrap()
     }
     fn stdin(&self, args: &[&str], input: Value) -> Value {
+        parse(self.input(args, input))
+    }
+    fn input(&self, args: &[&str], input: Value) -> Output {
         let mut cmd = self.cmd(&self.root(), args);
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -57,7 +60,7 @@ impl Fixture {
             .unwrap()
             .write_all(input.to_string().as_bytes())
             .unwrap();
-        parse(child.wait_with_output().unwrap())
+        child.wait_with_output().unwrap()
     }
     fn memory(&self, input: Value) -> Value {
         self.stdin(&["remember", "--file", "-"], input)
@@ -628,6 +631,244 @@ fn failed_sql_write_rolls_back_memory_edges_and_full_text_changes() {
     );
     assert_eq!(f.ok(&["search", "deployment"]).as_array().unwrap().len(), 2);
     assert_eq!(f.ok(&["doctor"])["ok"], true);
+}
+
+#[test]
+fn linked_creation_saves_both_directions_and_allows_standalone_memories() {
+    let f = Fixture::new();
+    let parent = f.memory(json!({"title":"Cache component", "type":"component"}));
+    let issue = f.memory(json!({"title":"Cache failure", "type":"issue"}));
+    let old = f.memory(json!({"title":"Previous cache fix", "type":"fix"}));
+    let new = f.memory(json!({"title":"Atomic cache fix", "type":"fix", "links":[
+        {"relation":"belongs_to", "to":id(&parent)},
+        {"relation":"belongs_to", "to":id(&parent)},
+        {"relation":"corrected_by", "from":id(&issue)},
+        {"relation":"supersedes", "to":id(&old)}
+    ]}));
+    let graph = f.ok(&["graph", "--all"]);
+    assert_eq!(graph["edges"].as_array().unwrap().len(), 3);
+    assert!(graph["edges"].as_array().unwrap().contains(&json!({
+        "from":id(&issue), "relation":"corrected_by", "to":id(&new)
+    })));
+    assert!(graph["edges"].as_array().unwrap().contains(&json!({
+        "from":id(&new), "relation":"belongs_to", "to":id(&parent)
+    })));
+    assert_eq!(f.ok(&["show", id(&old)])["memory"]["status"], "superseded");
+    assert_eq!(f.ok(&["search", "Atomic"])[0]["memory"]["id"], id(&new));
+    assert!(new.get("links").is_none());
+    for value in [
+        json!({"title":"Standalone omitted"}),
+        json!({"title":"Standalone empty", "links":[]}),
+    ] {
+        let standalone = f.memory(value);
+        assert!(
+            f.ok(&["show", id(&standalone)])["edges"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert!(
+        f.fail(&["link", id(&new), "supersedes", id(&new)])
+            .contains("self-links")
+    );
+    assert_eq!(f.ok(&["doctor"])["ok"], true);
+}
+
+#[test]
+fn linked_creation_rejects_bad_requests_without_saving_a_record() {
+    let f = Fixture::new();
+    let existing = f.memory(json!({"title":"Existing evidence"}));
+    let before = f.ok(&["graph", "--all"]);
+    let cases = [
+        json!(null),
+        json!({}),
+        json!([{"relation":"derived_from"}]),
+        json!([{"relation":"derived_from", "to":"not-an-id"}]),
+        json!([{"relation":"derived_from", "to":format!("mem_{}", "0".repeat(32))}]),
+        json!([{"relation":"derived_from", "from":id(&existing), "to":id(&existing)}]),
+        json!([{"relation":"causes", "to":id(&existing)}]),
+        json!([{"relation":"derived_from", "to":id(&existing), "typo":true}]),
+    ];
+    for links in cases {
+        let out = f.input(
+            &["remember", "--file", "-"],
+            json!({"title":"Must not survive", "links":links}),
+        );
+        assert!(!out.status.success());
+        assert!(out.stdout.is_empty());
+        assert_eq!(f.ok(&["graph", "--all"]), before);
+    }
+    let out = f.input(
+        &["remember", "--file", "-"],
+        json!({"title":"Typo", "links":[], "unknown":true}),
+    );
+    assert!(!out.status.success());
+    assert_eq!(f.ok(&["graph", "--all"]), before);
+}
+
+#[test]
+fn linked_creation_rolls_back_earlier_supersession_when_a_later_link_is_invalid() {
+    let f = Fixture::new();
+    let old = f.memory(json!({"title":"Original policy"}));
+    let global = f.memory(json!({"title":"Global policy", "scope":"global"}));
+    let before = f.ok(&["graph", "--all"]);
+    let out = f.input(
+        &["remember", "--file", "-"],
+        json!({"title":"Rollbackmarker", "links":[
+            {"relation":"supersedes", "to":id(&old)},
+            {"relation":"supersedes", "to":id(&global)}
+        ]}),
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("same scope and task"));
+    assert_eq!(f.ok(&["graph", "--all"]), before);
+    assert!(
+        f.ok(&["search", "Rollbackmarker"])
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(f.ok(&["doctor"])["ok"], true);
+}
+
+#[test]
+fn linked_creation_sql_error_rolls_back_record_edges_status_and_fts() {
+    let f = Fixture::new();
+    let old = f.memory(json!({"title":"Original evidence"}));
+    let before = f.ok(&["graph", "--all"]);
+    let connection =
+        rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    connection.execute_batch("CREATE TRIGGER reject_created_edge BEFORE INSERT ON edges BEGIN SELECT RAISE(ABORT, 'atomic edge failure'); END;").unwrap();
+    drop(connection);
+    let out = f.input(
+        &["remember", "--file", "-"],
+        json!({"title":"Sqlrollbackmarker", "links":[
+            {"relation":"supersedes", "to":id(&old)}
+        ]}),
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("atomic edge failure"));
+    assert_eq!(f.ok(&["graph", "--all"]), before);
+    assert!(
+        f.ok(&["search", "Sqlrollbackmarker"])
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(f.ok(&["doctor"])["ok"], true);
+}
+
+#[test]
+fn linked_creation_preserves_scope_rules_and_single_store_write_boundary() {
+    let f = Fixture::new();
+    let global = f.memory(json!({"title":"Global evidence", "scope":"global"}));
+    let project = f.memory(json!({"title":"Project finding", "links":[
+        {"relation":"derived_from", "to":id(&global)}
+    ]}));
+    let task = f.memory(
+        json!({"title":"Task finding", "scope":"task", "task_id":"investigation", "links":[
+            {"relation":"belongs_to", "to":id(&project)},
+            {"relation":"related_to", "from":id(&project)}
+        ]}),
+    );
+    assert_eq!(
+        f.ok(&["show", id(&task)])["edges"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let before = f.ok(&["graph", "--all"]);
+    for links in [
+        json!([{"relation":"related_to", "to":id(&project)}]),
+        json!([{"relation":"related_to", "from":id(&project)}]),
+    ] {
+        let out = f.input(
+            &["remember", "--file", "-"],
+            json!({"title":"Forbidden global", "scope":"global", "links":links}),
+        );
+        assert!(!out.status.success());
+        assert_eq!(f.ok(&["graph", "--all"]), before);
+    }
+    let out = f.input(
+        &["remember", "--file", "-"],
+        json!({"title":"Cannot retire task", "links":[
+            {"relation":"supersedes", "to":id(&task)}
+        ]}),
+    );
+    assert!(!out.status.success());
+    assert_eq!(f.ok(&["graph", "--all"]), before);
+}
+
+#[test]
+fn linked_creation_uses_only_accessible_client_and_project_endpoints() {
+    let f = Fixture::new();
+    let client = f.ok(&["client", "add", "Shared client"]);
+    let other = f.temp.path().join("other-project");
+    fs::create_dir(&other).unwrap();
+    parse(
+        f.cmd(
+            &other,
+            &["init", "--client", id(&client), "--agent", "none"],
+        )
+        .output()
+        .unwrap(),
+    );
+    let hidden = parse(
+        f.cmd(&other, &["remember", "--title", "Private client result"])
+            .output()
+            .unwrap(),
+    );
+    let client_memory = parse(
+        f.cmd(
+            &other,
+            &[
+                "remember",
+                "--title",
+                "Client knowledge",
+                "--scope",
+                "client",
+            ],
+        )
+        .output()
+        .unwrap(),
+    );
+    let before = f.ok(&["graph", "--all"]);
+    for endpoint in [id(&hidden), id(&client_memory)] {
+        let out = f.input(
+            &["remember", "--file", "-"],
+            json!({"title":"Cannot access", "links":[
+                {"relation":"derived_from", "to":endpoint}
+            ]}),
+        );
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("accessible scopes"));
+        assert_eq!(f.ok(&["graph", "--all"]), before);
+    }
+    // A project associated with the client may reference that client's records.
+    let mut command = f.cmd(&other, &["remember", "--file", "-"]);
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            json!({"title":"Client-derived project finding", "links":[
+                {"relation":"derived_from", "to":id(&client_memory)}
+            ]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+    let memory = parse(child.wait_with_output().unwrap());
+    let shown = parse(f.cmd(&other, &["show", id(&memory)]).output().unwrap());
+    assert_eq!(shown["edges"].as_array().unwrap().len(), 1);
 }
 
 #[test]

@@ -19,7 +19,8 @@ For measurements, investigations, or conflicting findings, also read
 After finding existing context, decide whether to update a record or create a
 distinct one. For each saved record, inspect whether a parent, source evidence,
 applicable component, unresolved goal, or prior failure already exists. Add only
-supported directed relationships and verify them with `show`. A genuinely
+supported directed relationships in the creation request's optional `links` array
+and verify them with `show`. A genuinely
 standalone record may remain isolated; shared keywords or file paths are not
 enough to justify a link. Never fabricate a parent to make a graph look connected.
 
@@ -58,7 +59,9 @@ Use `link <new-id> supersedes <old-id>` to retire outdated knowledge in the same
 For a handoff, save a task-scoped `handoff` containing current state, unresolved questions and next actions. Store durable findings separately. Keep source references and verification dates meaningful. Do not store credentials or copy sensitive details into broader scopes. Skills guide this workflow; they cannot guarantee automatic recall or change model weights.
 
 Automatic integrations must perform the same capture-and-connect checks rather
-than assume the skill runs on each write. The CLI currently saves records and
-links in separate calls. If linking fails, retain the returned memory ID, report
-the incomplete link, and repair it after checking current state; do not recreate
-the memory on retry or claim the whole operation was atomic.
+than assume the skill runs on each write. Prefer `remember --file` with optional
+`links` to commit a new memory and known relationships together. Omit links when
+none is justified. A rejected linked creation saves nothing. If a response is lost,
+check current state before retrying; creation has no idempotency key. Relationships
+discovered later still use `link`; if that separate call fails, retain the saved ID
+and repair the missing edge rather than recreating the memory.

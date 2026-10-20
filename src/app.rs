@@ -97,10 +97,18 @@ pub fn run(cli: Cli) -> Result<()> {
         }
         Command::Project { command } => project(&workspace, command, output),
         Command::Remember(args) => {
-            let mut data: MemoryInput = if let Some(file) = args.file {
-                serde_json::from_value(input(&file)?)?
+            let (mut data, links): (MemoryInput, Vec<CreateLink>) = if let Some(file) = args.file {
+                let mut value = input(&file)?;
+                let object = value
+                    .as_object_mut()
+                    .context("memory must be a JSON object")?;
+                let links = object
+                    .remove("links")
+                    .map(serde_json::from_value)
+                    .transpose()?;
+                (serde_json::from_value(value)?, links.unwrap_or_default())
             } else {
-                MemoryInput::default()
+                (MemoryInput::default(), vec![])
             };
             if let Some(v) = args.title {
                 data.title = v;
@@ -141,7 +149,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     _ => None,
                 };
             }
-            emit(workspace.create(data)?, output)
+            emit(workspace.create_with_links(data, &links)?, output)
         }
         Command::List(filter) => {
             let graph = workspace.snapshot()?;
@@ -195,7 +203,7 @@ pub fn run(cli: Cli) -> Result<()> {
             file: Some(file),
         } => emit(patch(&workspace, &id, input(&file)?)?, output),
         Command::Update { .. } => unreachable!("clap requires both memory ID and file"),
-        Command::Link { from, relation, to } => emit(link(&workspace, from, relation, to)?, output),
+        Command::Link { from, relation, to } => emit(workspace.link(from, relation, to)?, output),
         Command::Unlink { from, relation, to } => {
             let source = workspace.find(&from)?;
             let removed = workspace.store(source.data.scope)?.change(|g| {
@@ -527,72 +535,6 @@ pub fn patch(workspace: &Workspace, id: &str, patch: Value) -> Result<Memory> {
         memory.data = data;
         memory.updated_at = stamp;
         Ok(memory.clone())
-    })
-}
-fn link(workspace: &Workspace, from: String, relation: Relation, to: String) -> Result<Edge> {
-    ensure!(from != to, "self-links are not supported");
-    let source = workspace.find(&from)?;
-    let target = workspace.find(&to)?;
-    // Broader-scope stores must never retain pointers into another client's private graph.
-    let rank = |scope| match scope {
-        Scope::Global => 0,
-        Scope::Client => 1,
-        Scope::Project | Scope::Task => 2,
-    };
-    ensure!(
-        rank(source.data.scope) >= rank(target.data.scope),
-        "edge would place project/client details in a broader scope; link from the narrower scope instead"
-    );
-    if relation == Relation::Supersedes {
-        ensure!(
-            source.data.scope == target.data.scope && source.data.task_id == target.data.task_id,
-            "supersession requires the same scope and task"
-        );
-        ensure!(source.active(), "superseding memory must be active");
-    }
-    let edge = Edge { from, relation, to };
-    workspace.store(source.data.scope)?.change(|g| {
-        ensure!(
-            g.memories.iter().any(|m| m.id == edge.from),
-            "source memory disappeared"
-        );
-        if relation == Relation::Supersedes {
-            ensure!(
-                g.memories.iter().any(|m| m.id == edge.from && m.active()),
-                "superseding memory must still be active"
-            );
-            // Each retirement has one successor, and supersession cannot form a cycle.
-            ensure!(
-                !g.edges.iter().any(|e| e.relation == Relation::Supersedes
-                    && e.to == edge.to
-                    && e.from != edge.from),
-                "target already has a successor"
-            );
-            let mut cursor = vec![edge.to.clone()];
-            let mut seen = std::collections::HashSet::new();
-            while let Some(node) = cursor.pop() {
-                ensure!(node != edge.from, "supersession cycle");
-                if seen.insert(node.clone()) {
-                    cursor.extend(
-                        g.edges
-                            .iter()
-                            .filter(|e| e.relation == relation && e.from == node)
-                            .map(|e| e.to.clone()),
-                    );
-                }
-            }
-            let target = g
-                .memories
-                .iter_mut()
-                .find(|m| m.id == edge.to)
-                .context("superseded memory disappeared")?;
-            target.data.status = Status::Superseded;
-            target.updated_at = now();
-        }
-        if !g.edges.contains(&edge) {
-            g.edges.push(edge.clone());
-        }
-        Ok(edge)
     })
 }
 fn trim_edges(graph: &mut Graph) {

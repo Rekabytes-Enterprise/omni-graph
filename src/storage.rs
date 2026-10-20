@@ -267,7 +267,10 @@ impl Workspace {
             .find(|m| m.id == id)
             .with_context(|| format!("memory {id} not found in this project's accessible scopes"))
     }
-    pub fn create(&self, mut data: MemoryInput) -> Result<Memory> {
+    pub fn create(&self, data: MemoryInput) -> Result<Memory> {
+        self.create_with_links(data, &[])
+    }
+    pub fn create_with_links(&self, mut data: MemoryInput, links: &[CreateLink]) -> Result<Memory> {
         data.validate()?;
         ensure!(
             data.status != Status::Superseded,
@@ -276,6 +279,27 @@ impl Workspace {
         if data.summary.is_empty() {
             data.summary = data.body.chars().take(200).collect();
         }
+        let store = self.store(data.scope)?;
+        // Resolve only accessible endpoints. Same-store records are read again under
+        // the write transaction; broader stores are read-only references.
+        let accessible: HashMap<_, _> = if links.is_empty() {
+            HashMap::new()
+        } else {
+            self.snapshot()?
+                .memories
+                .into_iter()
+                .map(|m| (m.id.clone(), m))
+                .collect()
+        };
+        let endpoints: Vec<_> = links.iter().map(|link| {
+            let id = link.endpoint()?;
+            let other = accessible.get(id)
+                .with_context(|| format!("memory {id} not found in this project's accessible scopes"))?.clone();
+            let local = self.store(other.data.scope)?.path == store.path;
+            ensure!(link.from.is_none() || local,
+                "incoming links must share the new memory's store; atomic creation cannot write multiple stores");
+            Ok((other, local))
+        }).collect::<Result<_>>()?;
         let stamp = now();
         let memory = Memory {
             id: id("mem"),
@@ -289,7 +313,7 @@ impl Workspace {
             verified_at: (data.evidence_level == Evidence::Verified).then_some(stamp),
             data,
         };
-        self.store(memory.data.scope)?.change(|g| {
+        store.change(|g| {
             ensure!(
                 !g.memories.iter().any(|m| m.data.scope == memory.data.scope
                     && m.project_id == memory.project_id
@@ -302,8 +326,125 @@ impl Workspace {
                 "an active memory with this title already exists; search and update it"
             );
             g.memories.push(memory.clone());
-            Ok(())
-        })?;
-        Ok(memory)
+            for (link, (other, local)) in links.iter().zip(&endpoints) {
+                let other = if *local {
+                    g.memories
+                        .iter()
+                        .find(|m| m.id == other.id)
+                        .context("link endpoint disappeared")?
+                        .clone()
+                } else {
+                    other.clone()
+                };
+                let current = g
+                    .memories
+                    .iter()
+                    .find(|m| m.id == memory.id)
+                    .unwrap()
+                    .clone();
+                let (source, target) = if link.from.is_some() {
+                    (&other, &current)
+                } else {
+                    (&current, &other)
+                };
+                apply_link(g, source, link.relation, target)?;
+            }
+            Ok(g.memories
+                .iter()
+                .find(|m| m.id == memory.id)
+                .unwrap()
+                .clone())
+        })
     }
+    pub fn link(&self, from: String, relation: Relation, to: String) -> Result<Edge> {
+        let source = self.find(&from)?;
+        let target = self.find(&to)?;
+        let store = self.store(source.data.scope)?;
+        let target_is_local = self.store(target.data.scope)?.path == store.path;
+        store.change(|g| {
+            let source = g
+                .memories
+                .iter()
+                .find(|m| m.id == from)
+                .context("source memory disappeared")?
+                .clone();
+            let target = if target_is_local {
+                g.memories
+                    .iter()
+                    .find(|m| m.id == to)
+                    .context("target memory disappeared")?
+                    .clone()
+            } else {
+                target
+            };
+            apply_link(g, &source, relation, &target)
+        })
+    }
+}
+
+fn apply_link(g: &mut Graph, source: &Memory, relation: Relation, target: &Memory) -> Result<Edge> {
+    ensure!(source.id != target.id, "self-links are not supported");
+    // Broader-scope stores must never retain pointers into another client's private graph.
+    let rank = |scope| match scope {
+        Scope::Global => 0,
+        Scope::Client => 1,
+        Scope::Project | Scope::Task => 2,
+    };
+    ensure!(
+        rank(source.data.scope) >= rank(target.data.scope),
+        "edge would place project/client details in a broader scope; link from the narrower scope instead"
+    );
+    if relation == Relation::Supersedes {
+        ensure!(
+            source.data.scope == target.data.scope && source.data.task_id == target.data.task_id,
+            "supersession requires the same scope and task"
+        );
+        ensure!(source.active(), "superseding memory must be active");
+    }
+    let edge = Edge {
+        from: source.id.clone(),
+        relation,
+        to: target.id.clone(),
+    };
+    ensure!(
+        g.memories.iter().any(|m| m.id == edge.from),
+        "source memory disappeared"
+    );
+    if relation == Relation::Supersedes {
+        ensure!(
+            g.memories.iter().any(|m| m.id == edge.from && m.active()),
+            "superseding memory must still be active"
+        );
+        // Each retirement has one successor, and supersession cannot form a cycle.
+        ensure!(
+            !g.edges.iter().any(|e| e.relation == Relation::Supersedes
+                && e.to == edge.to
+                && e.from != edge.from),
+            "target already has a successor"
+        );
+        let mut cursor = vec![edge.to.clone()];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(node) = cursor.pop() {
+            ensure!(node != edge.from, "supersession cycle");
+            if seen.insert(node.clone()) {
+                cursor.extend(
+                    g.edges
+                        .iter()
+                        .filter(|e| e.relation == relation && e.from == node)
+                        .map(|e| e.to.clone()),
+                );
+            }
+        }
+        let target = g
+            .memories
+            .iter_mut()
+            .find(|m| m.id == edge.to)
+            .context("superseded memory disappeared")?;
+        target.data.status = Status::Superseded;
+        target.updated_at = now();
+    }
+    if !g.edges.contains(&edge) {
+        g.edges.push(edge.clone());
+    }
+    Ok(edge)
 }

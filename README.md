@@ -178,6 +178,38 @@ learning_goal ──resolved_by──▶ finding
 
 Use `omni-graph remember --file memory.json` for structured records, and `omni-graph link MEMORY_ID corrected_by FIX_ID` to connect their returned IDs. Run `omni-graph review --json` to find open work, recurring mistakes, and memories due for review. Mark a fix verified only after recording verification evidence.
 
+### Save a memory and its links together
+
+Automatic writers can include an optional `links` array in the creation payload:
+
+```json
+{
+  "title": "Cache invalidation fix",
+  "type": "fix",
+  "body": "Describe the change, verification, and remaining limits.",
+  "links": [
+    {"from": "mem_EXISTING_ISSUE_ID", "relation": "corrected_by"},
+    {"relation": "belongs_to", "to": "mem_EXISTING_COMPONENT_ID"}
+  ]
+}
+```
+
+Replace the example IDs with existing memory IDs, then run
+`omni-graph remember --file memory.json --json`. `from` connects an existing
+memory to the new one; `to` connects the new memory to an existing one. Each entry
+needs exactly one endpoint. The response keeps the usual top-level memory `id`;
+use `omni-graph show MEMORY_ID --json` to inspect its saved relationships.
+
+The memory and supplied links save in one SQLite transaction. If validation or a
+write fails, none of the record, links, supersession changes, or search entries is
+saved. Incoming links must share the new memory's database; outgoing links may
+reference accessible broader scopes under the existing privacy rules.
+
+**Standalone memories remain supported:** omit `links` or use `[]` when no
+relationship makes sense. Omni-graph does not guess links from shared keywords.
+Use `link` for relationships discovered later. Creation has no idempotency key;
+if a success response is lost, search before retrying.
+
 ## Explore the graph
 
 Run `omni-graph` inside an initialized project, then choose **Web UI**, **TUI**, or **Remote** with the arrow keys and Enter (or press `1` / `2` / `3`).

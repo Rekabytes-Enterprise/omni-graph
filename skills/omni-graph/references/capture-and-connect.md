@@ -17,19 +17,40 @@ enough for another agent to check them.
 
 ## Save, connect, verify
 
-1. Save with `remember --file - --json`, or patch with
-   `update <id> --file - --json`. Capture the returned ID.
-2. Inspect existing edges. Choose relevant endpoints and a supported relation
+1. Inspect existing context. Choose relevant endpoints and supported relations
    from the table below; there is no required edge count.
-3. Run `link <from-id> <relation> <to-id> --json` for each justified relationship.
-4. Run `show <id> --json` and confirm both the record and intended edge directions.
-   If a link fails, report which one and why. Reuse the saved ID on retry. Exact
-   duplicate links are idempotent; creating the same memory again is not.
+2. For creation, pass memory fields and optional `links` in one JSON object to
+   `remember --file - --json`. Capture the returned memory ID. For an existing
+   record, use `update <id> --file - --json`; links are creation-only request data.
+3. Run `show <id> --json` and confirm the record and intended edge directions.
+   Use `link <from-id> <relation> <to-id> --json` for relationships discovered later.
 
-These commands are separate writes, not a transaction. Do not delete a valid
-memory merely because a subsequent link failed. If no supported relation exists,
-leave it standalone and say so in the task report when relevant; do not create a
-new memory merely to explain an isolated node.
+Example creation payload (replace IDs with existing memory IDs):
+
+```json
+{
+  "title": "Verified cache fix",
+  "type": "fix",
+  "links": [
+    {"from": "mem_EXISTING_ISSUE_ID", "relation": "corrected_by"},
+    {"relation": "belongs_to", "to": "mem_EXISTING_COMPONENT_ID"}
+  ]
+}
+```
+
+`from` means existing → new; `to` means new → existing. Provide exactly one per
+link. All endpoints must already exist in accessible scopes. Duplicate edges
+coalesce. The memory, edges, FTS entries, and supersession effects commit in one
+transaction or not at all. Incoming edges must share the new record's database;
+outgoing references to accessible broader scopes are allowed by normal scope
+rules. Do not reverse edges or copy private evidence to bypass these restrictions.
+
+A rejected linked creation leaves no memory to repair. After a lost response,
+search before retrying because creation is not idempotent. A separate `link`
+failure does not undo a previously saved memory: reuse its ID when repairing it.
+If no relation is justified, omit `links` or use `[]`; do not create a new memory
+merely to explain an isolated node. On older versions without linked creation,
+use separate calls and report any incomplete link instead of claiming atomicity.
 
 ## Relationship direction
 

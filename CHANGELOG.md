@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+
+- Improve the memory skill with capture-and-connect, evidence-lineage, and graph-maintenance guides; verify relationships without forcing standalone records into the graph.
+- Install and refresh supporting skill guides alongside the entrypoint for supported agents, with destination checks before writing files.
+- Add issue forms, an issue-closing PR template, security and support policies, a community code of conduct, and maintainer/code-owner documentation.
+
 ## 0.2.2
 
 - Add Remote access to the startup menu and `web --remote --email EMAIL` for headless servers.

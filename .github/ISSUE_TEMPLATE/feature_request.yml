@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose an improvement and explain the problem it solves.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Who needs this and what is difficult today? Use fictional examples.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the user workflow and expected result.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+      description: Include existing workarounds and implications for memory privacy, compatibility, or supported platforms.
+  - type: textarea
+    id: contribution
+    attributes:
+      label: Contribution interest
+      description: Would you like to help with a design, documentation, testing, or implementation? This is optional.

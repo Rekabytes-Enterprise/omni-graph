@@ -2,6 +2,10 @@
 
 Thank you for helping improve Omni-graph. Bug reports, documentation, agent integrations, and focused code changes are welcome.
 
+Please follow the [code of conduct](CODE_OF_CONDUCT.md). See [support](SUPPORT.md)
+for usage help, [security reporting](SECURITY.md) for vulnerabilities, and
+[maintainer responsibilities](MAINTAINERS.md) for review and release ownership.
+
 ## Branch policy
 
 **Create every contribution branch from `dev`. Open every contribution pull request against `dev`, never `main`.**
@@ -76,11 +80,36 @@ Explain the problem, the resulting behavior, and how you verified it. Include te
 
 Maintainers may ask you to rebase or narrow the scope before merging. Do not merge contribution PRs into `main`.
 
+### Link and close issues
+
+Use `Closes #123` in the PR description for an issue fully resolved by the change;
+use `Refs #123` for partial or related work. List each resolved issue separately.
+Small fixes may use the template without an issue; explain that in the related
+issues section instead of leaving the example placeholder.
+
+GitHub's [closing-keyword behavior](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)
+depends on the repository's default branch (`main`). A contribution PR targeting
+`dev` does not automatically close an issue when merged. Maintainers review its
+references when promoting to `main` and close resolved issues with the release
+and PR links if needed. Keep targeting `dev`; do not change the base just to
+trigger automatic closure.
+
+### First contributions and agent-assisted work
+
+Start with a reproducible bug, a documentation improvement, or a small test gap.
+Comment on an existing issue before taking on substantial work to avoid duplicate
+effort. A useful report or review is also a contribution.
+
+Agent-assisted contributions follow the same review standards. Understand and
+verify the submitted work, disclose material testing limits, and never submit
+private memory content or fabricated evidence. You remain responsible for the
+change and its dependencies regardless of how it was written.
+
 ## Reporting bugs
 
 Open an issue with the Omni-graph version, operating system, terminal, steps to reproduce, expected behavior, and actual result. Remove private memories and credentials from examples and logs. Suggest larger features in an issue before building them.
 
-For suspected security issues, avoid posting secrets or working exploit details in a public issue. Contact the maintainers privately through GitHub.
+For suspected security issues, follow [SECURITY.md](SECURITY.md) before sharing details.
 
 ## Releases for maintainers
 

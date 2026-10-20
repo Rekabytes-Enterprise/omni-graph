@@ -1,0 +1,3 @@
+# Repository-wide review owner. Specific rules can be added as maintainers join.
+# Owners must have write access. Review enforcement is configured in GitHub rulesets.
+* @rekabytes

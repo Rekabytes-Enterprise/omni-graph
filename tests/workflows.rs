@@ -383,6 +383,24 @@ fn skill_setup_does_not_follow_symlinks() {
     assert_eq!(fs::read_to_string(elsewhere).unwrap(), "untouched");
 }
 
+#[cfg(unix)]
+#[test]
+fn skill_reference_symlinks_are_rejected_before_any_setup_write() {
+    let f = Fixture::new();
+    let skill = f.root().join(".agents/skills/omni-graph/SKILL.md");
+    fs::write(&skill, "original skill").unwrap();
+    let reference = f
+        .root()
+        .join(".claude/skills/omni-graph/references/capture-and-connect.md");
+    fs::remove_file(&reference).unwrap();
+    let elsewhere = f.temp.path().join("outside-reference.md");
+    fs::write(&elsewhere, "untouched").unwrap();
+    std::os::unix::fs::symlink(&elsewhere, reference).unwrap();
+    assert!(f.fail(&["setup"]).contains("symlink"));
+    assert_eq!(fs::read_to_string(skill).unwrap(), "original skill");
+    assert_eq!(fs::read_to_string(elsewhere).unwrap(), "untouched");
+}
+
 #[test]
 fn task_recall_preserves_global_preferences_and_project_knowledge() {
     let f = Fixture::new();

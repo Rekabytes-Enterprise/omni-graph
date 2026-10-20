@@ -115,6 +115,14 @@ You can run commands from any directory inside an initialized project. To work w
 
 `omni-graph init` installs the bundled memory skill and adds a clearly marked instruction block to supported agent files. Existing instructions outside that block are preserved.
 
+The skill includes guides for capturing and connecting records, preserving evidence
+lineage, and auditing graph gaps. Agents check relevant existing memories before
+saving, add source-supported relationships, and verify their direction. Standalone
+records are allowed; common keywords do not establish causation. After updating
+Omni-graph, run `omni-graph setup` in an initialized project to refresh the skill
+and its guides. Integrations that write memories automatically must implement the
+same workflow; installing a skill does not enforce it on every writer.
+
 | Agent | Skill | Instructions |
 | --- | --- | --- |
 | Codex | `.agents/skills/omni-graph/SKILL.md` | `AGENTS.md` |
@@ -286,6 +294,13 @@ To uninstall the native command, remove the executable from `~/.omni-graph/bin` 
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before starting. Create your branch from **`dev`** and open your pull request against **`dev`**. The `main` branch is maintained for stable releases.
+
+Bug reports, documentation, tests, and agent integrations are welcome. Use the
+[issue forms](https://github.com/Rekabytes-Enterprise/omni-graph/issues/new/choose)
+to report a bug or propose a feature.
+
+[Support](SUPPORT.md) · [Security policy](SECURITY.md) ·
+[Code of conduct](CODE_OF_CONDUCT.md) · [Maintainers](MAINTAINERS.md)
 
 ## License
 

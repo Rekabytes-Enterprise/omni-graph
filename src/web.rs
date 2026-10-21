@@ -158,6 +158,40 @@ fn respond(
         public,
         navigation,
     );
+    let path = request.url().split('?').next().unwrap_or("");
+    if allowed
+        && matches!(request.method(), Method::Get | Method::Head)
+        && path.starts_with("/api/images/")
+    {
+        let result = (|| -> Result<(&str, Vec<u8>)> {
+            let parts: Vec<_> = path.trim_start_matches("/api/images/").split('/').collect();
+            let memory = workspace.find(parts[0])?;
+            match parts.as_slice() {
+                [id] => Ok((
+                    "application/json",
+                    serde_json::to_vec(&crate::attachments::list(
+                        &workspace.store(memory.data.scope)?.connection()?,
+                        id,
+                    )?)?,
+                )),
+                [id, image] => {
+                    let image = crate::attachments::read(workspace, id, image)?;
+                    let mime = match image.metadata.media_type.as_str() {
+                        "image/png" => "image/png",
+                        "image/jpeg" => "image/jpeg",
+                        "image/webp" => "image/webp",
+                        _ => anyhow::bail!("invalid image type"),
+                    };
+                    Ok((mime, image.data))
+                }
+                _ => anyhow::bail!("invalid image route"),
+            }
+        })();
+        return match result {
+            Ok((kind, body)) => send_response(request, 200, kind, body),
+            Err(_) => send_response(request, 404, "text/plain", b"Image not found".to_vec()),
+        };
+    }
     let (status, kind, body) = if !allowed {
         (403, "text/plain", "Forbidden origin".to_owned())
     } else if request.method() != &Method::Get && request.method() != &Method::Head {
@@ -243,7 +277,15 @@ fn respond(
             _ => (404, "text/plain", "Not found".to_owned()),
         }
     };
-    let mut response = Response::from_string(body).with_status_code(status);
+    send_response(request, status, kind, body.into_bytes())
+}
+fn send_response(request: Request, status: u16, kind: &str, body: Vec<u8>) -> Result<()> {
+    let body = if request.method() == &Method::Head {
+        vec![]
+    } else {
+        body
+    };
+    let mut response = Response::from_data(body).with_status_code(status);
     for (name, value) in [
         ("Content-Type", kind),
         ("Cache-Control", "no-store"),

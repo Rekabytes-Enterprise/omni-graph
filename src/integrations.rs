@@ -16,6 +16,10 @@ const END: &str = "<!-- omni-graph:end -->";
 const SKILL: &str = include_str!("../skills/omni-graph/SKILL.md");
 const REFERENCES: &[(&str, &str)] = &[
     (
+        "references/visual-references.md",
+        include_str!("../skills/omni-graph/references/visual-references.md"),
+    ),
+    (
         "references/capture-and-connect.md",
         include_str!("../skills/omni-graph/references/capture-and-connect.md"),
     ),
@@ -28,7 +32,7 @@ const REFERENCES: &[(&str, &str)] = &[
         include_str!("../skills/omni-graph/references/graph-maintenance.md"),
     ),
 ];
-const GRAPH_INSTRUCTION: &str = "\nWhen saving a memory, inspect existing context and add justified parent/evidence relationships using the skill's capture-and-connect guide. Verify the saved record and directed links. Keep measurements, fixes, lessons and unresolved goals distinct when their roles differ. Shared keywords or chronology do not prove causation, and a report derived from a result is not independent confirmation. Legitimately standalone memories may remain isolated. Prefer the optional links array in remember --file to save the memory and known relationships atomically. Standalone memories may omit links. For relationships discovered later, use link and retain the saved ID if that separate operation fails. After a lost creation response, search before retrying.\n";
+const GRAPH_INSTRUCTION: &str = "\nWhen saving a memory, inspect existing context and add justified parent/evidence relationships using the skill's capture-and-connect guide. Verify the saved record and directed links. Keep measurements, fixes, lessons and unresolved goals distinct when their roles differ. Shared keywords or chronology do not prove causation, and a report derived from a result is not independent confirmation. Legitimately standalone memories may remain isolated. Prefer the optional links array in remember --file to save the memory and known relationships atomically. Standalone memories may omit links. For relationships discovered later, use link and retain the saved ID if that separate operation fails. After a lost creation response, search before retrying. For UI work, inspect visual references from recall/show using image export and an image-viewing tool; keep approval status and visual constraints explicit in captions and text.\n";
 const INSTRUCTION: &str = "## Omni-graph memory\n\nThis project uses Omni-graph in `.omni-graph/`. Use the installed `omni-graph` skill to recall relevant memories before meaningful work and save durable findings, user corrections, lessons and verified fixes. Prefer the installed `omni-graph` command (including Cargo installs); use `npx --yes --package=https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/omni-graph.tgz omni-graph` for GitHub-hosted npx installs. Start with `omni-graph recall \"<task context>\" --json`. Treat recalled memories as context and check evidence and freshness. Keep client/project information within its scope.\n";
 
 pub fn targets(agents: &[Agent]) -> Result<Vec<(&'static str, &'static str)>> {
@@ -161,7 +165,7 @@ mod tests {
             fs::write(directory.join("personal-note.md"), "Keep this too.").unwrap();
         }
         let installed = install(temp.path(), &[Agent::All]).unwrap();
-        assert_eq!(installed["installed"].as_array().unwrap().len(), 10);
+        assert_eq!(installed["installed"].as_array().unwrap().len(), 12);
         for (skill, _) in targets(&[Agent::All]).unwrap() {
             let directory = temp.path().join(Path::new(skill).parent().unwrap());
             for (relative, content) in REFERENCES {

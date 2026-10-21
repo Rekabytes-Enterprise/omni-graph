@@ -10,7 +10,13 @@ use std::{
     time::Duration,
 };
 
-const VERSION: i64 = 1;
+const VERSION: i64 = 2;
+const IMAGES: &str = "CREATE TABLE memory_images (
+    id TEXT PRIMARY KEY NOT NULL,
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    metadata TEXT NOT NULL CHECK(json_valid(metadata)),
+    data BLOB NOT NULL
+); CREATE INDEX memory_images_owner ON memory_images(memory_id);";
 const APPLICATION_ID: i64 = 0x4f4d4e49;
 const SCHEMA: &str = r#"
 CREATE TABLE memories (
@@ -122,13 +128,14 @@ pub fn open(directory: &Path) -> Result<Connection> {
         };
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(SCHEMA)?;
+        tx.execute_batch(IMAGES)?;
         save(&tx, &Graph::default(), &graph)?;
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
         tx.pragma_update(None, "user_version", VERSION)?;
         tx.commit()?;
     } else {
         ensure!(
-            version == VERSION,
+            version == 1 || version == VERSION,
             "unsupported SQLite schema {version}; this version supports {VERSION}"
         );
         let application: i64 =
@@ -137,6 +144,12 @@ pub fn open(directory: &Path) -> Result<Connection> {
             application == APPLICATION_ID,
             "memory.sqlite is not an Omni-graph database"
         );
+        if version == 1 {
+            let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(IMAGES)?;
+            tx.pragma_update(None, "user_version", VERSION)?;
+            tx.commit()?;
+        }
     }
     connection.pragma_update(None, "journal_mode", "WAL")?;
     // FULL keeps committed memories durable across power loss on supported local filesystems.

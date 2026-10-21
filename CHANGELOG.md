@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.5
+
+- Store scoped image attachments with memories, including atomic creation with links, Web UI previews, image CLI commands, and metadata in search/recall.
+- Add visual-reference guidance for agents and include images in explicitly shared export/import bundles.
+- Migrate SQLite storage from schema 1 to 2 while preserving existing memories; older executables cannot open the upgraded stores.
+
 ## 0.2.4
 
 - Allow `remember --file` to save a memory and optional incoming/outgoing links in one transaction, with rollback of edges, supersession changes, and search entries on failure.

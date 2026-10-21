@@ -46,6 +46,11 @@ pub enum Command {
     },
     /// Save a memory with optional atomic links supplied in its JSON object
     Remember(Box<Remember>),
+    /// Manage visual references stored with a memory
+    Image {
+        #[command(subcommand)]
+        command: ImageCommand,
+    },
     /// List accessible memories
     List(Filter),
     /// Search accessible memories using SQLite FTS5 full-text matching
@@ -209,7 +214,7 @@ pub enum ProjectCommand {
 pub struct Remember {
     #[arg(
         long,
-        help = "Memory JSON object with optional links array, or - for stdin"
+        help = "Memory JSON object with optional links/images arrays, or - for stdin"
     )]
     pub file: Option<PathBuf>,
     #[arg(long)]
@@ -236,6 +241,29 @@ pub struct Remember {
     pub evidence: Option<Evidence>,
     #[arg(long)]
     pub by: Option<String>,
+}
+#[derive(Subcommand)]
+pub enum ImageCommand {
+    Add {
+        id: String,
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long, default_value = "")]
+        caption: String,
+    },
+    List {
+        id: String,
+    },
+    Export {
+        id: String,
+        image: String,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    Remove {
+        id: String,
+        image: String,
+    },
 }
 #[derive(Args, Default, Clone)]
 pub struct Filter {

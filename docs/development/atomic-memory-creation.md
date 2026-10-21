@@ -29,7 +29,7 @@ memory object, preserving its top-level ID contract; `show ID` reads back links.
 
 ```text
 CreateLink { relation: Relation, from: Option<String>, to: Option<String> }
-Workspace::create_with_links(MemoryInput, &[CreateLink]) -> Memory
+Workspace::create_with_images(MemoryInput, &[CreateLink], &[ImageInput]) -> Memory
 Workspace::link(from, relation, to) -> Edge
 apply_link(&mut Graph, source, relation, target) -> Edge [private]
 ```

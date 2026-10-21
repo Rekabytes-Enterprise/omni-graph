@@ -15,6 +15,8 @@ Treat saving a record and checking its graph context as one workflow. For a new
 finding or fix, read [capture and connect](references/capture-and-connect.md).
 For measurements, investigations, or conflicting findings, also read
 [evidence and investigations](references/evidence-and-investigations.md).
+For UI screenshots or visual consistency, read
+[visual references](references/visual-references.md).
 
 After finding existing context, decide whether to update a record or create a
 distinct one. For each saved record, inspect whether a parent, source evidence,

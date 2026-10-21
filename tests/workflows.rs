@@ -78,6 +78,260 @@ fn parse(output: Output) -> Value {
 fn id(value: &Value) -> &str {
     value["id"].as_str().unwrap()
 }
+fn sample_image(f: &Fixture) -> std::path::PathBuf {
+    use base64::Engine as _;
+    let path = f.temp.path().join("reference.png");
+    fs::write(&path, base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=").unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn memory_images_are_copied_exportable_and_removed_without_changing_text() {
+    let f = Fixture::new();
+    let path = sample_image(&f);
+    let bytes = fs::read(&path).unwrap();
+    let saved = f.memory(json!({"title":"Approved UI", "body":"Keep the spacing and typography", "images":[{"file":path,"caption":"Approved reference; desktop"}]}));
+    fs::remove_file(path).unwrap();
+    let shown = f.ok(&["show", id(&saved)]);
+    assert_eq!(shown["images"][0]["caption"], "Approved reference; desktop");
+    assert_eq!(shown["images"][0]["media_type"], "image/png");
+    assert_eq!(
+        f.ok(&["recall", "Approved UI"])["results"][0]["images"][0]["id"],
+        shown["images"][0]["id"]
+    );
+    assert_eq!(
+        f.ok(&["search", "Approved UI"])[0]["images"][0]["id"],
+        shown["images"][0]["id"]
+    );
+    let image = shown["images"][0]["id"].as_str().unwrap();
+    let output = f.temp.path().join("copied.png");
+    f.ok(&[
+        "image",
+        "export",
+        id(&saved),
+        image,
+        "--output",
+        output.to_str().unwrap(),
+    ]);
+    assert_eq!(fs::read(&output).unwrap(), bytes);
+    assert!(
+        f.fail(&[
+            "image",
+            "export",
+            id(&saved),
+            image,
+            "--output",
+            output.to_str().unwrap()
+        ])
+        .contains("exist")
+    );
+    assert_eq!(
+        f.ok(&["image", "list", id(&saved)])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    f.ok(&["image", "remove", id(&saved), image]);
+    assert!(
+        f.ok(&["image", "list", id(&saved)])
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        f.ok(&["show", id(&saved)])["memory"]["body"],
+        "Keep the spacing and typography"
+    );
+}
+
+#[test]
+fn memory_images_validate_and_roll_back_with_record_and_links() {
+    let f = Fixture::new();
+    let path = sample_image(&f);
+    let old = f.memory(json!({"title":"Original layout"}));
+    let before = f.ok(&["graph", "--all"]);
+    let connection =
+        rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    connection.execute_batch("CREATE TRIGGER reject_image BEFORE INSERT ON memory_images BEGIN SELECT RAISE(ABORT,'image failure'); END;").unwrap();
+    let out = f.input(&["remember","--file","-"],json!({"title":"Imagefailuremarker","links":[{"relation":"supersedes","to":id(&old)}],"images":[{"file":path}]}));
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("image failure"));
+    assert_eq!(f.ok(&["graph", "--all"]), before);
+    assert!(
+        f.ok(&["search", "Imagefailuremarker"])
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM memory_images", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    connection
+        .execute_batch("DROP TRIGGER reject_image;")
+        .unwrap();
+    drop(connection);
+    let invalid = f.temp.path().join("bad.png");
+    fs::write(&invalid, b"<svg onload='bad()'></svg>").unwrap();
+    assert!(
+        f.fail(&[
+            "image",
+            "add",
+            id(&old),
+            "--file",
+            invalid.to_str().unwrap()
+        ])
+        .contains("unsupported image")
+    );
+    fs::write(&invalid, vec![0; 8 * 1024 * 1024 + 1]).unwrap();
+    assert!(
+        f.fail(&[
+            "image",
+            "add",
+            id(&old),
+            "--file",
+            invalid.to_str().unwrap()
+        ])
+        .contains("8 MiB")
+    );
+    for _ in 0..8 {
+        f.ok(&["image", "add", id(&old), "--file", path.to_str().unwrap()]);
+    }
+    assert!(
+        f.fail(&["image", "add", id(&old), "--file", path.to_str().unwrap()])
+            .contains("at most 8")
+    );
+    assert_eq!(
+        f.ok(&["image", "list", id(&old)]).as_array().unwrap().len(),
+        8
+    );
+}
+
+#[test]
+fn image_schema_migration_preserves_existing_records_and_edges() {
+    let f = Fixture::new();
+    let saved = f.memory(json!({"title":"Existing v1 record"}));
+    let before = f.ok(&["graph", "--all"]);
+    let connection =
+        rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    connection
+        .execute_batch("DROP TABLE memory_images; PRAGMA user_version=1;")
+        .unwrap();
+    drop(connection);
+    assert_eq!(f.ok(&["graph", "--all"]), before);
+    assert!(
+        f.ok(&["image", "list", id(&saved)])
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let connection =
+        rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    assert_eq!(
+        connection
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
+fn image_reads_reject_corrupt_bytes_without_overwriting_output() {
+    let f = Fixture::new();
+    let path = sample_image(&f);
+    let saved = f.memory(json!({"title":"Checksum reference","images":[{"file":path}]}));
+    let image = f.ok(&["image", "list", id(&saved)])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let connection =
+        rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    connection
+        .execute(
+            "UPDATE memory_images SET data=?1 WHERE id=?2",
+            rusqlite::params![b"damaged".as_slice(), image],
+        )
+        .unwrap();
+    drop(connection);
+    let output = f.temp.path().join("no-output.png");
+    assert!(
+        f.fail(&[
+            "image",
+            "export",
+            id(&saved),
+            &image,
+            "--output",
+            output.to_str().unwrap()
+        ])
+        .contains("checksum mismatch")
+    );
+    assert!(!output.exists());
+}
+
+#[test]
+fn shared_memory_images_roundtrip_and_private_images_stay_private() {
+    let f = Fixture::new();
+    let path = sample_image(&f);
+    let shared = f.memory(
+        json!({"title":"Shared UI","visibility":"project_shared","images":[{"file":path}]}),
+    );
+    let private = f.memory(json!({"title":"Private screenshot","images":[{"file":path}]}));
+    let image = f.ok(&["image", "list", id(&shared)])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let bundle = f.temp.path().join("bundle.json");
+    f.ok(&["export", "--output", bundle.to_str().unwrap()]);
+    let value: Value = serde_json::from_slice(&fs::read(&bundle).unwrap()).unwrap();
+    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["images"].as_array().unwrap().len(), 1);
+    assert!(!value.to_string().contains(id(&private)));
+    let clone = f.temp.path().join("clone");
+    fs::create_dir_all(clone.join(".omni-graph")).unwrap();
+    fs::copy(
+        f.root().join(".omni-graph/project.json"),
+        clone.join(".omni-graph/project.json"),
+    )
+    .unwrap();
+    for _ in 0..2 {
+        parse(
+            f.cmd(&clone, &["import", "--file", bundle.to_str().unwrap()])
+                .output()
+                .unwrap(),
+        );
+    }
+    assert_eq!(
+        parse(
+            f.cmd(&clone, &["image", "list", id(&shared)])
+                .output()
+                .unwrap()
+        )
+        .as_array()
+        .unwrap()
+        .len(),
+        1
+    );
+    assert_eq!(
+        parse(
+            f.cmd(&clone, &["image", "list", id(&shared)])
+                .output()
+                .unwrap()
+        )[0]["id"],
+        image
+    );
+    let mut bad = value.clone();
+    bad["images"][0]["metadata"]["memory_id"] = json!(id(&private));
+    let out = f.input(&["import", "--file", "-"], bad);
+    assert!(!out.status.success());
+    let mut bad = value;
+    bad["images"][0]["metadata"]["sha256"] = json!("invalid");
+    let out = f.input(&["import", "--file", "-"], bad);
+    assert!(!out.status.success());
+}
 
 #[test]
 fn initialization_is_idempotent_and_preserves_existing_instructions() {
@@ -1096,6 +1350,9 @@ impl Drop for WebProcess {
     }
 }
 fn web_request(address: &str, method: &str, path: &str, headers: &str) -> String {
+    String::from_utf8(web_request_bytes(address, method, path, headers)).unwrap()
+}
+fn web_request_bytes(address: &str, method: &str, path: &str, headers: &str) -> Vec<u8> {
     use std::{io::Read, net::TcpStream, time::Duration};
     let mut stream = TcpStream::connect(address).unwrap();
     stream
@@ -1106,8 +1363,8 @@ fn web_request(address: &str, method: &str, path: &str, headers: &str) -> String
         "{method} {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n{headers}\r\n"
     )
     .unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
+    let mut response = vec![];
+    stream.read_to_end(&mut response).unwrap();
     response
 }
 #[test]
@@ -1117,6 +1374,16 @@ fn browser_server_serves_scoped_live_memory_and_rejects_unsafe_requests() {
     let saved =
         f.memory(json!({"title":"Web visible memory", "body":"<script>literal text</script>"}));
     let global = f.memory(json!({"title":"Shared global preference", "scope":"global"}));
+    let path = sample_image(&f);
+    let image = f.ok(&[
+        "image",
+        "add",
+        id(&saved),
+        "--file",
+        path.to_str().unwrap(),
+        "--caption",
+        "Approved reference",
+    ]);
     let foreign = f.temp.path().join("other-project");
     fs::create_dir(&foreign).unwrap();
     parse(
@@ -1124,10 +1391,24 @@ fn browser_server_serves_scoped_live_memory_and_rejects_unsafe_requests() {
             .output()
             .unwrap(),
     );
-    parse(
+    let foreign_memory = parse(
         f.cmd(
             &foreign,
             &["remember", "--title", "Unrelated project secret"],
+        )
+        .output()
+        .unwrap(),
+    );
+    let foreign_image = parse(
+        f.cmd(
+            &foreign,
+            &[
+                "image",
+                "add",
+                id(&foreign_memory),
+                "--file",
+                path.to_str().unwrap(),
+            ],
         )
         .output()
         .unwrap(),
@@ -1157,6 +1438,31 @@ fn browser_server_serves_scoped_live_memory_and_rejects_unsafe_requests() {
     let response = web_request(address, "GET", "/", "");
     assert!(response.starts_with("HTTP/1.1 200"));
     assert!(response.contains("Memory explorer") && response.contains("Content-Security-Policy:"));
+    let image_path = format!("/api/images/{}/{}", id(&saved), id(&image));
+    let response = web_request_bytes(address, "GET", &image_path, "");
+    let boundary = response.windows(4).position(|b| b == b"\r\n\r\n").unwrap() + 4;
+    assert_eq!(&response[boundary..], fs::read(&path).unwrap());
+    assert!(String::from_utf8_lossy(&response[..boundary]).contains("Content-Type: image/png"));
+    assert!(web_request(address, "HEAD", &image_path, "").starts_with("HTTP/1.1 200"));
+    assert!(
+        web_request(
+            address,
+            "GET",
+            &image_path,
+            "Origin: https://evil.example\r\n"
+        )
+        .starts_with("HTTP/1.1 403")
+    );
+    assert!(web_request(address, "POST", &image_path, "").starts_with("HTTP/1.1 405"));
+    for route in [
+        format!("/api/images/{}/{}", id(&global), id(&image)),
+        format!("/api/images/{}/{}", id(&foreign_memory), id(&foreign_image)),
+        "/api/images/../../memory.sqlite".into(),
+    ] {
+        assert!(web_request(address, "GET", &route, "").starts_with("HTTP/1.1 404"));
+    }
+    let response = web_request(address, "GET", &format!("/api/images/{}", id(&saved)), "");
+    assert!(response.contains("Approved reference") && !response.contains("base64"));
     for path in [
         "/app.js",
         "/graph.js",

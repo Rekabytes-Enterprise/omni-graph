@@ -6,6 +6,7 @@ let data = { graph: { memories: [], edges: [] }, active: [] }, graph = data.grap
 let selected = null, loading = false, first = true, lastSignature = '';
 let flow = !matchMedia('(prefers-reduced-motion: reduce)').matches;
 let view;
+let detailsGeneration = 0;
 function text(tag, content, className) {
   const el = document.createElement(tag); el.textContent = content;
   if (className) el.className = className;
@@ -17,6 +18,7 @@ function select(id) {
   details();
 }
 function details() {
+  const generation = ++detailsGeneration;
   const m = graph.memories.find(m => m.id === selected);
   $('details').hidden = !m;
   const body = $('detail-body'); body.replaceChildren();
@@ -27,6 +29,28 @@ function details() {
   const badges = text('div', '', 'badges');
   for (const value of [m.type, m.scope, m.evidence_level, m.progress || m.status]) badges.append(text('span', value.replaceAll('_', ' '), value === m.type ? 'badge type-badge' : 'badge'));
   body.append(badges);
+  const images = text('div', '', 'memory-images'); body.append(images);
+  fetch(`/api/images/${encodeURIComponent(m.id)}`).then(response => {
+    if (!response.ok) throw new Error('Cannot load image references');
+    return response.json();
+  }).then(references => {
+    if (generation !== detailsGeneration || !references.length) return;
+    images.append(text('h3', 'Visual references', 'detail-label'));
+    for (const reference of references) {
+      const figure = document.createElement('figure');
+      const link = document.createElement('a');
+      link.href = `/api/images/${encodeURIComponent(m.id)}/${encodeURIComponent(reference.id)}`;
+      link.target = '_blank'; link.rel = 'noopener noreferrer';
+      const image = document.createElement('img'); image.src = link.href;
+      image.alt = reference.caption || reference.name; image.loading = 'lazy';
+      image.onerror = () => { image.replaceWith(text('p', 'Image could not be displayed.', 'detail-text')); };
+      link.append(image); figure.append(link);
+      figure.append(text('figcaption', reference.caption || reference.name, 'detail-text'));
+      images.append(figure);
+    }
+  }).catch(() => {
+    if (generation === detailsGeneration) images.append(text('p', 'Visual references could not be loaded.', 'detail-text'));
+  });
   const section = (label, value) => {
     if (!value || (Array.isArray(value) && !value.length)) return;
     body.append(text('h3', label, 'detail-label'), text('p', Array.isArray(value) ? value.join('\n') : value, 'detail-text'));

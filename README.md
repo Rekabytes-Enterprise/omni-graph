@@ -116,7 +116,7 @@ You can run commands from any directory inside an initialized project. To work w
 `omni-graph init` installs the bundled memory skill and adds a clearly marked instruction block to supported agent files. Existing instructions outside that block are preserved.
 
 The skill includes guides for capturing and connecting records, preserving evidence
-lineage, and auditing graph gaps. Agents check relevant existing memories before
+lineage, auditing graph gaps, and using visual references for UI changes. Agents check relevant existing memories before
 saving, add source-supported relationships, and verify their direction. Standalone
 records are allowed; common keywords do not establish causation. After updating
 Omni-graph, run `omni-graph setup` in an initialized project to refresh the skill
@@ -209,6 +209,60 @@ reference accessible broader scopes under the existing privacy rules.
 relationship makes sense. Omni-graph does not guess links from shared keywords.
 Use `link` for relationships discovered later. Creation has no idempotency key;
 if a success response is lost, search before retrying.
+
+### Keep visual references with UI memories
+
+Attach a screenshot to an existing memory:
+
+```sh
+omni-graph image add MEMORY_ID --file ./approved-dashboard.png \
+  --caption "Approved desktop layout: preserve the spacing, typography, and card hierarchy."
+omni-graph image list MEMORY_ID --json
+```
+
+For a new memory, include optional `images` alongside its fields and links:
+
+```json
+{
+  "title": "Dashboard visual reference",
+  "type": "constraint",
+  "body": "Use the approved desktop screenshot as a reference for spacing and hierarchy.",
+  "images": [
+    {"file": "/absolute/path/dashboard.png", "caption": "Approved desktop reference, 1440px viewport"}
+  ]
+}
+```
+
+Save it with `omni-graph remember --file memory.json --json`. Files are copied
+into the memory's SQLite database, so moving the original screenshot does not
+break the reference. Paths resolve from the command's working directory; absolute
+paths are easiest for automatic writers. PNG, JPEG, and WebP are supported, up to
+8 MiB each and eight images per memory. File signatures are checked; SVG and
+remote image URLs are not supported. Images are stored locally without resizing
+or removing embedded metadata, so redact sensitive content before attaching.
+
+Search, recall, and `show` return image metadata. Select the memory in the Web UI
+to see previews; click an image to open its original size. An agent can export
+the image to a local file and inspect it using its image-viewing tool:
+
+```sh
+omni-graph image export MEMORY_ID IMAGE_ID --output ./reference.png
+omni-graph image remove MEMORY_ID IMAGE_ID
+```
+
+Export refuses to overwrite an existing file. The TUI continues to show written
+guidance; use the Web UI or image export to inspect pixels. Describe what should
+stay consistent, the viewport/device, and whether a screenshot is an approved
+reference, a bug, or an alternative. Omni-graph does not infer approval, run OCR,
+or embed images for semantic search.
+
+New memory fields, links, and image bytes commit together or roll back together.
+Images share their owning memory's scope and remote-access protection. Shared
+exports include images only for memories explicitly marked `project_shared`;
+review screenshots before sharing. Image bundles require a version with image
+support. The SQLite upgrade from schema 1 to 2 is automatic and preserves existing
+records; older executables cannot open the upgraded database. Back up your memory
+stores before upgrading if you need to retain compatibility with an older binary.
 
 ## Explore the graph
 

@@ -116,7 +116,7 @@ pub fn ignore_store_files(directory: &Path) -> Result<()> {
     Ok(())
 }
 impl Store {
-    fn connection(&self) -> Result<Connection> {
+    pub(crate) fn connection(&self) -> Result<Connection> {
         // File locking coordinates one-time schema creation/legacy migration.
         // Normal writes use SQLite's own transactions and busy timeout.
         let _lock = Lock::at(&self.path)?;
@@ -141,12 +141,22 @@ impl Store {
         Ok((graph, ranks))
     }
     pub fn change<T>(&self, f: impl FnOnce(&mut Graph) -> Result<T>) -> Result<T> {
+        self.change_with_images(&[], f)
+    }
+    pub fn change_with_images<T>(
+        &self,
+        images: &[crate::attachments::PreparedImage],
+        f: impl FnOnce(&mut Graph) -> Result<T>,
+    ) -> Result<T> {
         let mut connection = self.connection()?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let before = database::load(&tx)?;
         let mut graph = before.clone();
         let value = f(&mut graph)?;
         database::save(&tx, &before, &graph)?;
+        for image in images {
+            crate::attachments::insert(&tx, image)?;
+        }
         tx.commit()?;
         Ok(value)
     }
@@ -268,9 +278,14 @@ impl Workspace {
             .with_context(|| format!("memory {id} not found in this project's accessible scopes"))
     }
     pub fn create(&self, data: MemoryInput) -> Result<Memory> {
-        self.create_with_links(data, &[])
+        self.create_with_images(data, &[], &[])
     }
-    pub fn create_with_links(&self, mut data: MemoryInput, links: &[CreateLink]) -> Result<Memory> {
+    pub fn create_with_images(
+        &self,
+        mut data: MemoryInput,
+        links: &[CreateLink],
+        images: &[crate::attachments::ImageInput],
+    ) -> Result<Memory> {
         data.validate()?;
         ensure!(
             data.status != Status::Superseded,
@@ -313,7 +328,15 @@ impl Workspace {
             verified_at: (data.evidence_level == Evidence::Verified).then_some(stamp),
             data,
         };
-        store.change(|g| {
+        ensure!(
+            images.len() <= crate::attachments::MAX_IMAGES,
+            "a memory supports at most 8 images"
+        );
+        let prepared = images
+            .iter()
+            .map(|image| image.prepare(&memory.id))
+            .collect::<Result<Vec<_>>>()?;
+        store.change_with_images(&prepared, |g| {
             ensure!(
                 !g.memories.iter().any(|m| m.data.scope == memory.data.scope
                     && m.project_id == memory.project_id

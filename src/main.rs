@@ -1,4 +1,5 @@
 mod app;
+mod attachments;
 mod cli;
 mod database;
 mod install;

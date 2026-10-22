@@ -26,6 +26,12 @@ pub enum Probe {
 }
 
 fn io_failure(error: io::Error) -> Probe {
+    // Win32 sharing/byte-range locks are transient, even though Rust maps them
+    // to PermissionDenied. A snapshot can race with SQLite checkpoint/cleanup.
+    #[cfg(windows)]
+    if matches!(error.raw_os_error(), Some(32 | 33)) {
+        return Probe::Busy;
+    }
     if error.kind() == io::ErrorKind::PermissionDenied {
         Probe::PermissionDenied
     } else {
@@ -274,6 +280,18 @@ mod tests {
             .collect();
         files.sort();
         files
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_lock_conflicts_are_busy_and_access_denied_remains_permission_denied() {
+        for code in [32, 33] {
+            assert_eq!(io_failure(io::Error::from_raw_os_error(code)), Probe::Busy);
+        }
+        assert_eq!(
+            io_failure(io::Error::from_raw_os_error(5)),
+            Probe::PermissionDenied
+        );
     }
 
     #[test]

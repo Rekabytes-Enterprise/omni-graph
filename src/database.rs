@@ -204,7 +204,11 @@ pub fn preflight(directory: &Path) -> Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     let result = loop {
         let result = crate::compatibility_probe::inspect(directory);
-        if result != Probe::Busy || std::time::Instant::now() >= deadline {
+        // Windows can also report access denied while a WAL file is delete-pending.
+        // Retry it for normal opening, but preserve the final permission diagnosis.
+        let retryable =
+            result == Probe::Busy || (cfg!(windows) && result == Probe::PermissionDenied);
+        if !retryable || std::time::Instant::now() >= deadline {
             break result;
         }
         std::thread::sleep(Duration::from_millis(20));

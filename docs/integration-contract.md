@@ -31,7 +31,8 @@ client scope requires a valid initialized project. Global scope works independen
 of project configuration.
 
 Discovery resolves the executable actually running and reports its canonical
-absolute path. Store paths are absolute. Discovery never installs or downloads
+absolute path. Windows canonical paths may use the `\\?\` namespace prefix;
+compare resolved paths rather than raw spellings. Store paths are absolute. Discovery never installs or downloads
 software, creates stores, changes configuration, or migrates a database. It copies
 existing database/WAL bytes into private temporary storage and inspects those
 copies. It reports no memory content or credentials. It needs enough temporary disk

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, chmodSync, realpathSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join, resolve} from 'node:path';
+import {join, resolve, toNamespacedPath} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import Ajv from 'ajv';
 import { DatabaseSync } from 'node:sqlite';
@@ -30,11 +30,11 @@ test('discovery missing/compatible, capabilities, exact executable and selection
    assert.equal(f.run('init','--agent','none','--json').status,0);
    assert.equal(f.run('list','--json').status,0);
    const report=check(f.run('compatibility','--api-version','1','--json'),reportSchema,0);
-   assert.equal(report.executable.path,binary); assert.equal(report.stores.length,2);
+   assert.equal(toNamespacedPath(report.executable.path),toNamespacedPath(binary)); assert.equal(report.stores.length,2);
    assert.deepEqual(report.database.read_versions,[3]); assert.deepEqual(report.database.migratable_versions,[1,2]);
    assert.ok(report.capabilities.includes('writer_fencing'));
    assert.equal(check(f.run('compatibility','--scope','global','--json'),reportSchema,0).stores.length,1);
-   assert.equal(check(f.run('compatibility','--scope','project','--json'),reportSchema,0).stores[0].path,join(realpathSync(f.project),'.omni-graph'));
+   assert.equal(toNamespacedPath(check(f.run('compatibility','--scope','project','--json'),reportSchema,0).stores[0].path),toNamespacedPath(join(realpathSync(f.project),'.omni-graph')));
  }finally{f.close();}
 });
 test('corruption and permission errors are schema-valid and do not alter files',()=>{

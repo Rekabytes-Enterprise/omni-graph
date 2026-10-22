@@ -1,7 +1,7 @@
 use crate::{database, model::*};
 use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::Connection;
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::{
@@ -100,6 +100,7 @@ pub fn ignore_store_files(directory: &Path) -> Result<()> {
         "/memory.sqlite-wal",
         "/memory.sqlite-shm",
         "/memory.sqlite-journal",
+        "/memory.sqlite.backup-*",
         "/.lock",
     ] {
         if !text.lines().any(|line| line.trim() == entry) {
@@ -117,12 +118,6 @@ pub fn ignore_store_files(directory: &Path) -> Result<()> {
 }
 impl Store {
     pub(crate) fn connection(&self) -> Result<Connection> {
-        // File locking coordinates one-time schema creation/legacy migration.
-        // Normal writes use SQLite's own transactions and busy timeout.
-        let _lock = Lock::at(&self.path)?;
-        if self.path.join("project.json").exists() {
-            ignore_store_files(&self.path)?;
-        }
         database::open(&self.path).with_context(|| format!("memory store {}", self.path.display()))
     }
     pub fn load(&self) -> Result<Graph> {
@@ -149,7 +144,7 @@ impl Store {
         f: impl FnOnce(&mut Graph) -> Result<T>,
     ) -> Result<T> {
         let mut connection = self.connection()?;
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = database::write_transaction(&mut connection)?;
         let before = database::load(&tx)?;
         let mut graph = before.clone();
         let value = f(&mut graph)?;
@@ -162,15 +157,18 @@ impl Store {
     }
     pub fn check(&self) -> Result<()> {
         let mut connection = self.connection()?;
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = database::write_transaction(&mut connection)?;
         database::check(&tx)?;
         tx.commit()?;
         Ok(())
     }
     pub fn reindex(&self) -> Result<()> {
         let mut connection = self.connection()?;
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        tx.execute("INSERT INTO memory_fts(memory_fts) VALUES('rebuild')", [])?;
+        let tx = database::write_transaction(&mut connection)?;
+        tx.execute(
+            "INSERT INTO memory_search(memory_search) VALUES('rebuild')",
+            [],
+        )?;
         tx.commit()?;
         Ok(())
     }

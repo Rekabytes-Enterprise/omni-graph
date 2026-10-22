@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "required": [
+    "error"
+  ],
+  "properties": {
+    "error": {
+      "type": "object",
+      "required": [
+        "integration_api_version",
+        "code",
+        "message",
+        "recovery",
+        "exit_code"
+      ],
+      "properties": {
+        "integration_api_version": {
+          "const": 1
+        },
+        "code": {
+          "enum": [
+            "invalid_arguments",
+            "unsupported_api_version",
+            "store_selection_failed",
+            "operation_failed",
+            "unsupported_schema",
+            "migration_failed",
+            "backup_failed",
+            "schema_changed"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "recovery": {
+          "type": "string"
+        },
+        "exit_code": {
+          "enum": [
+            1,
+            2,
+            12,
+            16,
+            17
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Omni-graph structured error, integration API 1"
+}

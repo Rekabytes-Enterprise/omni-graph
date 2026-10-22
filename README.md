@@ -391,3 +391,12 @@ to report a bug or propose a feature.
 ## License
 
 [MIT](LICENSE) © 2026 Omni-graph contributors.
+
+### Integrating another application
+
+Use `omni-graph compatibility --json` before accessing a memory store. It reports
+which executable is running, API capabilities, supported database schemas, and
+any required migration or recovery action without changing the store.
+
+See the [public integration contract](docs/integration-contract.md) for API
+versioning, structured errors, installation checks, backups, and recovery.

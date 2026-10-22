@@ -20,11 +20,22 @@ pub struct Cli {
         help = "Emit structured JSON (also works before a subcommand)"
     )]
     pub json: bool,
+    /// Opt into the stable integration contract; requires --json
+    #[arg(long, global = true, requires = "json")]
+    pub api_version: Option<u32>,
     #[command(subcommand)]
     pub command: Option<Command>,
 }
 #[derive(Subcommand)]
 pub enum Command {
+    /// Inspect compatibility without changing stores or installing software
+    Compatibility {
+        #[arg(long, value_enum, conflicts_with = "store")]
+        scope: Option<Scope>,
+        /// Inspect this store directory directly, including a missing store
+        #[arg(long)]
+        store: Option<PathBuf>,
+    },
     /// Install the executable and initialize user-level memory in ~/.omni-graph
     Install,
     /// Initialize project memory and install project-local agent skills

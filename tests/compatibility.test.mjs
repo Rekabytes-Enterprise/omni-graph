@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, chmodSync, realpathSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, chmodSync, statSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve, toNamespacedPath} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -34,7 +34,10 @@ test('discovery missing/compatible, capabilities, exact executable and selection
    assert.deepEqual(report.database.read_versions,[3]); assert.deepEqual(report.database.migratable_versions,[1,2]);
    assert.ok(report.capabilities.includes('writer_fencing'));
    assert.equal(check(f.run('compatibility','--scope','global','--json'),reportSchema,0).stores.length,1);
-   assert.equal(toNamespacedPath(check(f.run('compatibility','--scope','project','--json'),reportSchema,0).stores[0].path),toNamespacedPath(join(realpathSync(f.project),'.omni-graph')));
+   const selected=check(f.run('compatibility','--scope','project','--json'),reportSchema,0).stores[0].path;
+   // Windows short names (RUNNER~1) and canonical names can identify the same directory.
+   const identity=path=>{const s=statSync(path,{bigint:true});return [s.dev,s.ino];};
+   assert.deepEqual(identity(selected),identity(join(f.project,'.omni-graph')));
  }finally{f.close();}
 });
 test('corruption and permission errors are schema-valid and do not alter files',()=>{

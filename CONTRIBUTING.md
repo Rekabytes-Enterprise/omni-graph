@@ -38,7 +38,7 @@ Choose **`dev`** as the base in GitHub. With GitHub CLI, use `gh pr create --bas
 
 ## Local setup
 
-Install Rust 1.88 or newer and Node.js 20 or newer. CI uses Node.js 22. SQLite is bundled; a database server is not needed.
+Install Rust 1.88 or newer and Node.js 22.13 or newer for development tests. CI uses Node.js 22. The published launcher still supports Node.js 20. SQLite is bundled; a database server is not needed.
 
 ```sh
 cargo build
@@ -63,7 +63,7 @@ npm test
 npm run check
 ```
 
-`npm test` runs Rust unit/integration tests, the npm launcher and persistent-install smoke tests, and local shell-installer tests on macOS/Linux. Installer tests use a local download fixture and never download a release. `npm run check` runs formatting and Clippy.
+`npm test` runs compatibility contract/schema tests using Node's built-in SQLite fixture support, Rust unit/integration tests, the npm launcher and persistent-install smoke tests, and local shell-installer tests on macOS/Linux. Installer tests use a local download fixture and never download a release. `npm run check` runs formatting and Clippy.
 
 For installer changes, also run `sh -n install.sh`. Exercise supported platforms where possible and explain anything you could not test.
 

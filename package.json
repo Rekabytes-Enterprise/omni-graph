@@ -1,6 +1,6 @@
 {
   "name": "omni-graph",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Shared memory and a Rust graph TUI for AI coding agents",
   "type": "module",
   "license": "MIT",
@@ -14,7 +14,9 @@
     "assets",
     "README.md",
     "CONTRIBUTING.md",
-    "LICENSE"
+    "LICENSE",
+    "contracts",
+    "docs/integration-contract.md"
   ],
   "engines": {
     "node": ">=20"
@@ -22,7 +24,7 @@
   "scripts": {
     "build": "cargo build --release",
     "web:vendor": "node scripts/vendor-web.mjs",
-    "test": "cargo test && node --test tests/launcher.test.mjs tests/install.test.mjs tests/version.test.mjs tests/web.test.mjs",
+    "test": "cargo test && node --test tests/launcher.test.mjs tests/install.test.mjs tests/version.test.mjs tests/web.test.mjs tests/compatibility.test.mjs",
     "check": "node scripts/version.mjs check && cargo fmt --check && cargo clippy --all-targets -- -D warnings",
     "prepublishOnly": "node scripts/check-package.mjs",
     "version:bump": "node scripts/version.mjs",
@@ -46,6 +48,7 @@
     "url": "https://github.com/Rekabytes-Enterprise/omni-graph/issues"
   },
   "devDependencies": {
+    "ajv": "^8.20.0",
     "three": "0.186.1"
   }
 }

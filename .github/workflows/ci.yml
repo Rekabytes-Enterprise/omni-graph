@@ -32,6 +32,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: npm test

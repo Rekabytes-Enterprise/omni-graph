@@ -219,7 +219,7 @@ fn image_schema_migration_preserves_existing_records_and_edges() {
     let connection =
         rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
     connection
-        .execute_batch("DROP TABLE memory_images; PRAGMA user_version=1;")
+        .execute_batch("DROP TABLE memory_images; DROP TRIGGER guard_memories_INSERT; DROP TRIGGER guard_memories_UPDATE; DROP TRIGGER guard_memories_DELETE; DROP TRIGGER guard_edges_INSERT; DROP TRIGGER guard_edges_UPDATE; DROP TRIGGER guard_edges_DELETE; ALTER TABLE memory_search RENAME TO memory_fts; PRAGMA user_version=1;")
         .unwrap();
     drop(connection);
     assert_eq!(f.ok(&["graph", "--all"]), before);
@@ -235,7 +235,7 @@ fn image_schema_migration_preserves_existing_records_and_edges() {
         connection
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        2
+        3
     );
 }
 
@@ -250,6 +250,14 @@ fn image_reads_reject_corrupt_bytes_without_overwriting_output() {
         .to_owned();
     let connection =
         rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    connection
+        .create_scalar_function(
+            "omni_graph_write_schema",
+            0,
+            rusqlite::functions::FunctionFlags::SQLITE_UTF8,
+            |_| Ok(3_i64),
+        )
+        .unwrap();
     connection
         .execute(
             "UPDATE memory_images SET data=?1 WHERE id=?2",
@@ -851,7 +859,7 @@ fn fts_updates_remove_old_terms_and_reindex_restores_missing_entries() {
         rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
     connection
         .execute(
-            "INSERT INTO memory_fts(memory_fts) VALUES('delete-all')",
+            "INSERT INTO memory_search(memory_search) VALUES('delete-all')",
             [],
         )
         .unwrap();

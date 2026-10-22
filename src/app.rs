@@ -295,7 +295,10 @@ pub fn run(cli: Cli) -> Result<()> {
             );
             crate::web::run(&workspace, args)
         }
-        Command::Install | Command::Init(_) | Command::Client { .. } => unreachable!(),
+        Command::Compatibility { .. }
+        | Command::Install
+        | Command::Init(_)
+        | Command::Client { .. } => unreachable!(),
     }
 }
 fn init(start: &Path, home: &Path, args: Init, output: bool) -> Result<()> {
@@ -455,8 +458,7 @@ fn image_command(workspace: &Workspace, command: ImageCommand, output: bool) -> 
         ImageCommand::Remove { id, image } => {
             let memory = workspace.find(&id)?;
             let mut connection = workspace.store(memory.data.scope)?.connection()?;
-            let tx =
-                connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let tx = crate::database::write_transaction(&mut connection)?;
             ensure!(
                 tx.execute(
                     "DELETE FROM memory_images WHERE memory_id=?1 AND id=?2",

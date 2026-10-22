@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.6
+
+- Add read-only compatibility discovery, API 1 negotiation, structured errors, JSON schemas, and consumer-neutral integration guidance.
+- Upgrade SQLite schemas 1 and 2 to schema 3 with verified WAL-safe backups and transactional migration.
+- Fence writes from historical open connections and recheck schema inside write transactions.
+- Preserve legacy CLI error output unless consumers opt into the versioned contract.
+
 ## 0.2.5
 
 - Store scoped image attachments with memories, including atomic creation with links, Web UI previews, image CLI commands, and metadata in search/recall.

@@ -1,0 +1,161 @@
+{
+  "type": "object",
+  "required": [
+    "executable",
+    "integration_api_version",
+    "supported_api_versions",
+    "database",
+    "capabilities",
+    "stores",
+    "status",
+    "exit_code"
+  ],
+  "properties": {
+    "executable": {
+      "type": "object",
+      "required": [
+        "version",
+        "path"
+      ],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "integration_api_version": {
+      "const": 1
+    },
+    "supported_api_versions": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "database": {
+      "type": "object",
+      "required": [
+        "read_versions",
+        "write_versions",
+        "migratable_versions",
+        "migration_target",
+        "migration_policy"
+      ],
+      "properties": {
+        "read_versions": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "write_versions": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "migratable_versions": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "migration_target": {
+          "type": "integer"
+        },
+        "migration_policy": {
+          "const": "automatic_on_open_with_backup"
+        }
+      },
+      "additionalProperties": true
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stores": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "detected_schema_version",
+          "status",
+          "migration_required",
+          "migration_supported",
+          "recovery"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "detected_schema_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "compatible",
+              "missing_store",
+              "migration_required",
+              "unsupported_schema",
+              "permission_denied",
+              "invalid_database",
+              "unrecognized_database",
+              "busy",
+              "io_error",
+              "legacy_migration_required"
+            ]
+          },
+          "migration_required": {
+            "type": "boolean"
+          },
+          "migration_supported": {
+            "type": "boolean"
+          },
+          "recovery": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "status": {
+      "enum": [
+        "compatible",
+        "missing_store",
+        "migration_required",
+        "unsupported_schema",
+        "permission_denied",
+        "invalid_database",
+        "unrecognized_database",
+        "busy",
+        "io_error",
+        "legacy_migration_required"
+      ]
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ]
+    }
+  },
+  "additionalProperties": true,
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Omni-graph compatibility response, integration API 1"
+}

@@ -143,7 +143,7 @@ fn read_exact_checked(reader: &mut impl Read, buffer: &mut [u8]) -> Result<(), P
     })
 }
 fn wal_checksum(bytes: &[u8], big_endian: bool, sum: &mut [u32; 2]) {
-    for pair in bytes.chunks_exact(8) {
+    for pair in bytes.as_chunks::<8>().0 {
         let word = |bytes: &[u8]| {
             if big_endian {
                 be32(bytes)
@@ -566,7 +566,7 @@ mod tests {
         wal_checksum(&wal[..24], big_endian, &mut checksum);
         wal[24..28].copy_from_slice(&checksum[0].to_be_bytes());
         wal[28..32].copy_from_slice(&checksum[1].to_be_bytes());
-        for frame in wal[32..].chunks_exact_mut(24 + 4096) {
+        for frame in wal[32..].as_chunks_mut::<{ 24 + 4096 }>().0 {
             wal_checksum(&frame[..8], big_endian, &mut checksum);
             wal_checksum(&frame[24..], big_endian, &mut checksum);
             frame[16..20].copy_from_slice(&checksum[0].to_be_bytes());

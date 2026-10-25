@@ -9,6 +9,21 @@ pub struct Hit {
     pub reason: String,
     pub text_rank: Option<f64>,
 }
+/// Shared by full-graph and selective SQL retrieval to preserve scope/task behavior.
+pub fn eligible(memory: &Memory, filter: &Filter, recall: bool) -> bool {
+    let mut context_filter = filter.clone();
+    if recall {
+        context_filter.task = None;
+    }
+    context_filter.matches(memory)
+        && (!recall
+            || memory.data.scope != Scope::Task
+            || filter
+                .task
+                .as_ref()
+                .is_some_and(|task| memory.data.task_id.as_ref() == Some(task))
+            || (filter.task.is_none() && filter.scope == Some(Scope::Task)))
+}
 pub fn search(
     graph: &Graph,
     query: &str,
@@ -27,22 +42,12 @@ pub fn search(
             )
         })
         .collect();
-    let mut context_filter = filter.clone();
-    if recall {
-        context_filter.task = None;
-    }
-    let eligible = |m: &Memory| {
-        context_filter.matches(m)
-            && (!recall
-                || m.data.scope != Scope::Task
-                || filter
-                    .task
-                    .as_ref()
-                    .is_some_and(|task| m.data.task_id.as_ref() == Some(task))
-                || (filter.task.is_none() && filter.scope == Some(Scope::Task)))
-    };
     let mut hits = vec![];
-    for memory in graph.memories.iter().filter(|m| eligible(m)) {
+    for memory in graph
+        .memories
+        .iter()
+        .filter(|m| eligible(m, filter, recall))
+    {
         let title = memory.data.title.to_lowercase();
         let signals = format!(
             "{} {} {}",
@@ -141,7 +146,7 @@ pub fn search(
                 if let Some(memory) = graph
                     .memories
                     .iter()
-                    .find(|m| m.id == *neighbor && eligible(m))
+                    .find(|m| m.id == *neighbor && eligible(m, filter, recall))
                 {
                     seen.insert(neighbor.clone());
                     hits.push(Hit {

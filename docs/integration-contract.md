@@ -37,31 +37,33 @@ software, creates stores, changes configuration, or migrates a database. It copi
 existing database/WAL bytes into private temporary storage and inspects those
 copies. It reports no memory content or credentials. It needs enough temporary disk
 space for two copies of the selected database and WAL; stores are processed in turn.
-Normal store opening also uses this preflight to reject future schemas before touching
-source sidecars. This adds disk I/O proportional to store size, including image bytes.
+Ordinary opening instead checks the database header and committed WAL identity before
+opening SQLite, then validates required structures. It does not copy the main database
+or scan image BLOBs. This path still reads the active WAL; explicit compatibility
+inspection retains the deeper copy and integrity checks described above.
 
 A representative successful response is:
 
 ```json
 {
-  "executable": {"version": "0.2.6", "path": "/opt/omni-graph/bin/omni-graph"},
+  "executable": {"version": "0.2.7", "path": "/opt/omni-graph/bin/omni-graph"},
   "integration_api_version": 1,
   "supported_api_versions": [1],
   "database": {
-    "read_versions": [3],
-    "write_versions": [3],
-    "migratable_versions": [1, 2],
-    "migration_target": 3,
+    "read_versions": [4],
+    "write_versions": [4],
+    "migratable_versions": [1, 2, 3],
+    "migration_target": 4,
     "migration_policy": "automatic_on_open_with_backup"
   },
   "capabilities": [
     "compatibility", "structured_errors", "memory_crud", "fts5_search",
     "graph_recall", "atomic_memory_links", "image_attachments",
-    "shared_export_import", "migration_backup", "writer_fencing"
+    "shared_export_import", "migration_backup", "writer_fencing", "idempotent_creation"
   ],
   "stores": [{
     "path": "/home/user/.omni-graph",
-    "detected_schema_version": 3,
+    "detected_schema_version": 4,
     "status": "compatible",
     "migration_required": false,
     "migration_supported": false,
@@ -105,7 +107,7 @@ Do not interpret numeric order as a severity ranking or depend on store ordering
 | --- | ---: | --- |
 | `compatible` | 0 | Proceed, with operation-time checks still required. |
 | `missing_store` | 10 | Initialize intentionally; discovery creates nothing. |
-| `migration_required` | 11 | Stop older processes; normal opening backs up and migrates schema 1 or 2. |
+| `migration_required` | 11 | Stop older processes; normal opening backs up and migrates schemas 1–3. |
 | `legacy_migration_required` | 11 | Preserve `graph.json`; normal opening validates and imports it. |
 | `unsupported_schema` | 12 | Select/update to a compatible executable; never downgrade the store. |
 | `permission_denied` | 13 | Correct access for the invoking user. |
@@ -176,14 +178,15 @@ major; no time-based support guarantee or indefinite support is established here
 
 | On-disk format | API 1 behavior | Resulting SQLite schema |
 | --- | --- | ---: |
-| Missing store | Discovery reports missing; intentional initialization creates it. | 3 |
-| Legacy `graph.json` schema 1 | Normal opening validates and imports; original JSON remains. | 3 |
-| SQLite schema 1 | Back up, add image storage, update search storage and writer guards. | 3 |
-| SQLite schema 2 | Back up, update search storage and writer guards. | 3 |
-| SQLite schema 3 | Native read/write. | 3 |
+| Missing store | Discovery reports missing; intentional initialization creates it. | 4 |
+| Legacy `graph.json` schema 1 | Normal opening validates and imports; original JSON remains. | 4 |
+| SQLite schema 1 | Back up, add image storage, update search storage and writer guards. | 4 |
+| SQLite schema 2 | Back up, update search storage and writer guards. | 4 |
+| SQLite schema 3 | Back up, add creation receipts and refresh writer guards. | 4 |
+| SQLite schema 4 | Native read/write. | 4 |
 | Other SQLite schema | Refuse; no downgrade or speculative future support. | Unchanged |
 
-Schemas 1 and 2 are migration inputs, not native read/write formats for this
+Schemas 1, 2 and 3 are migration inputs, not native read/write formats for this
 executable. Normal store opening, including a read command, automatically upgrades
 them. Compatibility inspection never does. No separate migration command is
 required. For a project, a normal `list --json` opens its accessible stores; perform
@@ -302,5 +305,29 @@ report = check_compatibility()
 # After an operator-approved update or migration, call check_compatibility() again.
 ```
 
-Do not blindly retry `remember` after a lost response. Creation has no idempotency
-key; inspect existing records before deciding whether it needs to be repeated.
+## Retry-safe creation
+
+Check the `idempotent_creation` capability, then retain one key per intended save:
+
+```sh
+omni-graph remember --file memory.json --idempotency-key task-123-finding-1 --api-version 1 --json
+```
+
+The JSON input may instead contain a top-level `"idempotency_key"`. If both are
+provided, they must match. Keys contain 1–128 ASCII letters, digits, `.`, `_`, `:`
+or `-`. A key is scoped by memory scope, project, client and task.
+
+The first successful save commits the memory, links, images and receipt together.
+Retry the same effective payload with the same key to receive the original creation
+response, without duplicating or reapplying changes. A changed payload returns
+`idempotency_conflict` (exit 18); invalid keys return `invalid_arguments` (exit 2).
+Use `show` for the current record if it has subsequently changed or been archived.
+Failed transactions do not reserve keys. Unkeyed creation retains its old behavior;
+after an ambiguous unkeyed save, inspect existing records before retrying.
+
+Identity includes normalized memory fields, link array order, image order, image
+content and metadata. Retain the original image files for retries; their absolute
+paths are not identity. Source files must still be readable and unchanged. Receipts
+have no automatic expiry and stay in the owning local database; shared exports do
+not carry them. Standalone memories can still omit links. Receipts provide local
+retry safety, not deduplication across separate installations or restored snapshots.

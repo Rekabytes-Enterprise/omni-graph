@@ -207,8 +207,10 @@ reference accessible broader scopes under the existing privacy rules.
 
 **Standalone memories remain supported:** omit `links` or use `[]` when no
 relationship makes sense. Omni-graph does not guess links from shared keywords.
-Use `link` for relationships discovered later. Creation has no idempotency key;
-if a success response is lost, search before retrying.
+Use `link` for relationships discovered later. Use `remember --file memory.json --idempotency-key YOUR_OPERATION_KEY` for
+automatic writes. Retry the same payload and key after a lost response to receive
+the original result without duplicating the memory, links or images. Changed
+payloads conflict. See the [retry contract](docs/integration-contract.md#retry-safe-creation).
 
 ### Keep visual references with UI memories
 

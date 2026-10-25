@@ -223,6 +223,9 @@ pub enum ProjectCommand {
 }
 #[derive(Args)]
 pub struct Remember {
+    /// Stable key for retrying the same creation without duplicate writes
+    #[arg(long)]
+    pub idempotency_key: Option<String>,
     #[arg(
         long,
         help = "Memory JSON object with optional links/images arrays, or - for stdin"

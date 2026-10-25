@@ -63,7 +63,10 @@ For a handoff, save a task-scoped `handoff` containing current state, unresolved
 Automatic integrations must perform the same capture-and-connect checks rather
 than assume the skill runs on each write. Prefer `remember --file` with optional
 `links` to commit a new memory and known relationships together. Omit links when
-none is justified. A rejected linked creation saves nothing. If a response is lost,
-check current state before retrying; creation has no idempotency key. Relationships
+none is justified. A rejected linked creation saves nothing. When `compatibility --json` advertises `idempotent_creation`, retain one
+`--idempotency-key` per intended save and retry the same payload and key after a
+lost response. Preserve attached source files for retries. A changed payload
+conflicts; do not switch keys merely to bypass the conflict. Without a key, inspect
+current state before retrying. Relationships
 discovered later still use `link`; if that separate call fails, retain the saved ID
 and repair the missing edge rather than recreating the memory.

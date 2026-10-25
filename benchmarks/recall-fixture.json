@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "memories": [
+    {"key":"preference","scope":"global","type":"preference","title":"Delivery preference","body":"Before delivery, report the validation performed and unresolved limitations."},
+    {"key":"payment_issue","type":"mistake","title":"Webhook retries duplicate charges","body":"The payment receiver processed a repeated event twice after a network timeout.","keywords":["payment","webhook","duplicate","charges","retries"]},
+    {"key":"payment_fix","type":"fix","title":"Unique event receipt constraint","body":"Persist the event receipt and apply its side effect in one transaction. An existing receipt skips the effect.","links":[{"from":"payment_issue","relation":"corrected_by"}]},
+    {"key":"payment_lesson","type":"lesson","title":"Retry safety for side effects","body":"Use the producer event identifier as the deduplication key. Validate repeated delivery and concurrent consumers.","links":[{"from":"payment_issue","relation":"teaches"}]},
+    {"key":"calendar","type":"fact","title":"Calendar timezone boundaries","body":"Bookings use the venue timezone when determining midnight. Store instants in UTC and test daylight saving transitions.","keywords":["booking","calendar","timezone","midnight"]},
+    {"key":"theme","type":"decision","title":"Accessible dashboard palette","body":"Use a dark slate background with distinct amber warning and green success colors. Icons and labels also distinguish states.","keywords":["dashboard","colors","contrast","accessibility"]},
+    {"key":"migration","type":"procedure","title":"SQLite WAL backup before migrations","body":"Use SQLite online backup for committed WAL data. Preserve identifiers and refuse unsupported newer schema versions.","keywords":["SQLite","WAL","backup","migration"]},
+    {"key":"cache","type":"fix","title":"Stale inventory after stock adjustment","body":"Invalidate cached inventory after a committed stock adjustment. Test the next read returns the new quantity.","keywords":["inventory","stale","cache"]},
+    {"key":"task_current","type":"handoff","scope":"task","task_id":"checkout","title":"Checkout keyboard audit","body":"Verify focus returns to the payment trigger after closing the checkout modal.","keywords":["checkout","keyboard","focus"]},
+    {"key":"task_other","type":"handoff","scope":"task","task_id":"archive","title":"Archived checkout keyboard audit","body":"Unrelated task record: checkout keyboard focus. Must not be recalled outside its task.","keywords":["checkout","keyboard","focus"]}
+  ],
+  "queries": [
+    {"key":"exact","text":"Webhook retries duplicate charges","relevant":["payment_issue","payment_fix","payment_lesson","preference"]},
+    {"key":"paraphrase","text":"How do we avoid charging customers twice when a notification is delivered again?","relevant":["payment_issue","payment_fix","payment_lesson","preference"]},
+    {"key":"graph_evidence","text":"Webhook retries duplicate charges","relevant":["payment_fix","payment_lesson","preference"],"note":"The matching issue is useful navigation context but the requested answer is its remedy and lesson."},
+    {"key":"timezone","text":"booking calendar timezone midnight","relevant":["calendar","preference"]},
+    {"key":"migration","text":"SQLite WAL backup migration","relevant":["migration","preference"]},
+    {"key":"visual","text":"dashboard colors contrast accessibility","relevant":["theme","preference"]},
+    {"key":"cache","text":"stale inventory cache","relevant":["cache","preference"]},
+    {"key":"task","text":"checkout keyboard focus","task":"checkout","relevant":["task_current","preference"]}
+  ],
+  "distractors": [
+    ["Payment dashboard reporting", "Dashboard reporting counts payment events for weekly metrics; it does not describe charge deduplication."],
+    ["Calendar booking labels", "The calendar booking badge uses a short display label; this note covers typography."],
+    ["SQLite backup documentation heading", "The documentation navigation includes a SQLite backup heading; this note covers link placement."],
+    ["Inventory cache chart", "A chart shows historical inventory cache hit rates; this note covers chart axes."],
+    ["Dashboard color export", "Dashboard colors are included in a CSV export legend for the analytics report."],
+    ["Checkout keyboard equipment", "The checkout workstation keyboard asset tag belongs to the office equipment register."]
+  ]
+}

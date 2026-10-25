@@ -1,5 +1,6 @@
-//! Non-mutating store inspection. SQLite opens only a disposable copy, so it
-//! cannot create source WAL/SHM files or checkpoint the selected store.
+//! Non-mutating store inspection. Ordinary opening reads identity headers and
+//! validated WAL frames. Thorough discovery opens only disposable SQLite copies;
+//! neither inspector creates source WAL/SHM files or checkpoints the store.
 //!
 //! Two matching streaming copies reduce races with active writers; they are not
 //! a filesystem snapshot or a lock on historical writers. A busy result asks the
@@ -69,6 +70,186 @@ fn copy_store(source: &Path, target: &Path) -> io::Result<[Option<[u8; 32]>; 2]>
     ])
 }
 
+/// Lightweight ordinary-open preflight: read the database header and stream the
+/// WAL, never the database's record/image pages. This is identity discovery, not
+/// an integrity check. Explicit compatibility inspection below remains thorough.
+/// Format: https://sqlite.org/fileformat2.html#walformat
+pub fn inspect_identity(directory: &Path) -> Probe {
+    for _ in 0..3 {
+        let first = match identity_snapshot(directory) {
+            Ok(value) => value,
+            Err(probe) => return probe,
+        };
+        let second = match identity_snapshot(directory) {
+            Ok(value) => value,
+            Err(probe) => return probe,
+        };
+        if first != second {
+            continue;
+        }
+        let Some(snapshot) = second else {
+            return match fs::metadata(directory.join("graph.json")) {
+                Ok(metadata) if metadata.is_file() => Probe::Legacy,
+                Ok(_) => Probe::InvalidDatabase,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Probe::Missing,
+                Err(error) => io_failure(error),
+            };
+        };
+        let header = snapshot.committed;
+        if !valid_header(&header) {
+            return Probe::InvalidDatabase;
+        }
+        if i64::from(be32(&header[68..72])) != crate::database::APPLICATION_ID {
+            return Probe::UnrecognizedDatabase;
+        }
+        // SQLite exposes user_version as signed 32-bit, even though bytes are BE.
+        return Probe::Schema(i64::from(be32(&header[60..64]) as i32));
+    }
+    Probe::Busy
+}
+
+#[derive(PartialEq, Eq)]
+struct IdentitySnapshot {
+    main: [u8; 100],
+    committed: [u8; 100],
+    wal_digest: [u8; 32],
+}
+fn be32(bytes: &[u8]) -> u32 {
+    u32::from_be_bytes(bytes.try_into().expect("four-byte format field"))
+}
+fn valid_header(header: &[u8; 100]) -> bool {
+    let page = u16::from_be_bytes([header[16], header[17]]);
+    &header[..16] == b"SQLite format 3\0"
+        && (page == 1 || (page >= 512 && page.is_power_of_two()))
+        && matches!(header[18], 1 | 2)
+        && matches!(header[19], 1 | 2)
+        && header[21..24] == [64, 32, 32]
+}
+fn journal_clear(directory: &Path) -> Result<(), Probe> {
+    match fs::metadata(directory.join("memory.sqlite-journal")) {
+        Ok(metadata) if metadata.len() > 0 => Err(Probe::Busy),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(io_failure(error)),
+    }
+}
+fn read_exact_checked(reader: &mut impl Read, buffer: &mut [u8]) -> Result<(), Probe> {
+    reader.read_exact(buffer).map_err(|error| {
+        if error.kind() == io::ErrorKind::UnexpectedEof {
+            Probe::Busy
+        } else {
+            io_failure(error)
+        }
+    })
+}
+fn wal_checksum(bytes: &[u8], big_endian: bool, sum: &mut [u32; 2]) {
+    for pair in bytes.as_chunks::<8>().0 {
+        let word = |bytes: &[u8]| {
+            if big_endian {
+                be32(bytes)
+            } else {
+                u32::from_le_bytes(bytes.try_into().expect("four-byte checksum word"))
+            }
+        };
+        sum[0] = sum[0].wrapping_add(word(&pair[..4])).wrapping_add(sum[1]);
+        sum[1] = sum[1].wrapping_add(word(&pair[4..])).wrapping_add(sum[0]);
+    }
+}
+fn identity_snapshot(directory: &Path) -> Result<Option<IdentitySnapshot>, Probe> {
+    journal_clear(directory)?;
+    let mut database = match File::open(directory.join("memory.sqlite")) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return match fs::metadata(directory.join("memory.sqlite-wal")) {
+                Ok(_) => Err(Probe::InvalidDatabase),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+                Err(error) => Err(io_failure(error)),
+            };
+        }
+        Err(error) => return Err(io_failure(error)),
+    };
+    let mut main = [0_u8; 100];
+    // A stable truncated/empty file is invalid, not a reason to initialize over it.
+    if database.metadata().map_err(io_failure)?.len() < 100 {
+        return Err(Probe::InvalidDatabase);
+    }
+    read_exact_checked(&mut database, &mut main)?;
+    if !valid_header(&main) {
+        return Err(Probe::InvalidDatabase);
+    }
+    let page_size = match u16::from_be_bytes([main[16], main[17]]) {
+        1 => 65536,
+        size => usize::from(size),
+    };
+    let mut committed = main;
+    let mut digest = Sha256::new();
+    let mut wal = match File::open(directory.join("memory.sqlite-wal")) {
+        Ok(file) => Some(file),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(io_failure(error)),
+    };
+    if let Some(wal) = wal.as_mut() {
+        // Bound reads to the observed length; new appends are caught by the next
+        // snapshot instead of keeping this scan alive indefinitely.
+        let length = wal.metadata().map_err(io_failure)?.len();
+        if length > 0 {
+            if length < 32 {
+                return Err(Probe::Busy);
+            }
+            let mut header = [0_u8; 32];
+            read_exact_checked(wal, &mut header)?;
+            let magic = be32(&header[..4]);
+            if !matches!(magic, 0x377f0682 | 0x377f0683)
+                || be32(&header[4..8]) != 3_007_000
+                || be32(&header[8..12]) as usize != page_size
+            {
+                return Err(Probe::InvalidDatabase);
+            }
+            let big_endian = magic == 0x377f0683;
+            let mut checksum = [0, 0];
+            wal_checksum(&header[..24], big_endian, &mut checksum);
+            if checksum != [be32(&header[24..28]), be32(&header[28..32])] {
+                return Err(Probe::Busy);
+            }
+            digest.update(header);
+            let mut pending = main;
+            let mut frame = vec![0; 24 + page_size];
+            let frames = (length - 32) / frame.len() as u64;
+            for _ in 0..frames {
+                read_exact_checked(wal, &mut frame)?;
+                // Salt mismatch is the normal end of a reused WAL; remaining
+                // bytes belong to its previous generation and are not committed.
+                if frame[8..16] != header[16..24] {
+                    break;
+                }
+                if be32(&frame[..4]) == 0 {
+                    return Err(Probe::Busy);
+                }
+                wal_checksum(&frame[..8], big_endian, &mut checksum);
+                wal_checksum(&frame[24..], big_endian, &mut checksum);
+                digest.update(&frame);
+                // SQLite recovery stops at the first invalid frame. This also
+                // handles the abandoned tail of a rolled-back transaction.
+                if checksum != [be32(&frame[16..20]), be32(&frame[20..24])] {
+                    break;
+                }
+                if be32(&frame[..4]) == 1 {
+                    pending.copy_from_slice(&frame[24..124]);
+                }
+                if be32(&frame[4..8]) != 0 {
+                    committed = pending;
+                }
+            }
+        }
+    }
+    journal_clear(directory)?;
+    Ok(Some(IdentitySnapshot {
+        main,
+        committed,
+        wal_digest: digest.finalize().into(),
+    }))
+}
+
 /// Inspect an existing store without changing any of its files or directories.
 /// No memory contents or SQLite diagnostic strings escape this boundary.
 pub fn inspect(directory: &Path) -> Probe {
@@ -131,7 +312,9 @@ fn inspect_copy(path: &Path) -> Probe {
         if application != crate::database::APPLICATION_ID {
             return Ok(Probe::UnrecognizedDatabase);
         }
-        if (1..=3).contains(&version) && !known_structure(&connection, version)? {
+        if (1..=crate::database::VERSION).contains(&version)
+            && !known_structure(&connection, version)?
+        {
             return Ok(Probe::InvalidDatabase);
         }
         Ok(Probe::Schema(version))
@@ -163,7 +346,7 @@ fn inspect_copy(path: &Path) -> Probe {
 /// Validate the application structure for the explicitly supported schema set.
 /// Future schemas remain opaque: their names/layout may change legitimately.
 /// This checks required structure, not arbitrary SQL equivalence or hostile edits.
-fn known_structure(connection: &Connection, version: i64) -> rusqlite::Result<bool> {
+pub(crate) fn known_structure(connection: &Connection, version: i64) -> rusqlite::Result<bool> {
     fn object(
         connection: &Connection,
         kind: &str,
@@ -185,7 +368,7 @@ fn known_structure(connection: &Connection, version: i64) -> rusqlite::Result<bo
             .iter()
             .all(|name| actual.iter().any(|value| value == name)))
     }
-    let search = if version == 3 {
+    let search = if version >= 3 {
         "memory_search"
     } else {
         "memory_fts"
@@ -246,7 +429,7 @@ fn known_structure(connection: &Connection, version: i64) -> rusqlite::Result<bo
     {
         return Ok(false);
     }
-    if version == 3 {
+    if version >= 3 {
         for table in ["memories", "edges", "memory_images"] {
             for operation in ["INSERT", "UPDATE", "DELETE"] {
                 if !object(
@@ -257,6 +440,30 @@ fn known_structure(connection: &Connection, version: i64) -> rusqlite::Result<bo
                 )? {
                     return Ok(false);
                 }
+            }
+        }
+    }
+    if version >= 4 {
+        if !object(
+            connection,
+            "table",
+            "creation_receipts",
+            "creation_receipts",
+        )? || !columns(
+            connection,
+            "creation_receipts",
+            &["namespace", "key", "request_hash", "response"],
+        )? {
+            return Ok(false);
+        }
+        for operation in ["INSERT", "UPDATE", "DELETE"] {
+            if !object(
+                connection,
+                "trigger",
+                &format!("guard_creation_receipts_{operation}"),
+                "creation_receipts",
+            )? {
+                return Ok(false);
             }
         }
     }
@@ -280,6 +487,127 @@ mod tests {
             .collect();
         files.sort();
         files
+    }
+
+    fn identity_fixture(directory: &Path, page_size: u32) -> Connection {
+        let connection = Connection::open(directory.join("memory.sqlite")).unwrap();
+        connection
+            .pragma_update(None, "page_size", page_size)
+            .unwrap();
+        connection.execute_batch("CREATE TABLE sample(value BLOB); PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;").unwrap();
+        connection
+            .pragma_update(None, "application_id", crate::database::APPLICATION_ID)
+            .unwrap();
+        connection.pragma_update(None, "user_version", 999).unwrap();
+        connection
+    }
+    #[test]
+    fn identity_matches_sqlite_across_page_sizes_checkpoints_and_wal_reset() {
+        for page_size in [512, 4096, 65536] {
+            let root = tempfile::tempdir().unwrap();
+            let connection = identity_fixture(root.path(), page_size);
+            connection
+                .execute("INSERT INTO sample VALUES(zeroblob(200000))", [])
+                .unwrap();
+            for version in [999, 1000, 1001] {
+                let before = bytes(root.path());
+                assert_eq!(inspect_identity(root.path()), Probe::Schema(version));
+                assert_eq!(inspect(root.path()), Probe::Schema(version));
+                assert_eq!(bytes(root.path()), before);
+                connection
+                    .execute_batch("PRAGMA wal_checkpoint(PASSIVE)")
+                    .unwrap();
+                connection
+                    .pragma_update(None, "user_version", version + 1)
+                    .unwrap();
+            }
+            connection
+                .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+                .unwrap();
+            assert_eq!(inspect_identity(root.path()), Probe::Schema(1002));
+        }
+    }
+    #[test]
+    fn identity_ignores_uncommitted_schema_frames_and_rolled_back_tail() {
+        let root = tempfile::tempdir().unwrap();
+        let connection = identity_fixture(root.path(), 4096);
+        connection.execute_batch("PRAGMA cache_size=1; BEGIN IMMEDIATE; PRAGMA user_version=1000; INSERT INTO sample VALUES(zeroblob(200000));").unwrap();
+        assert_eq!(inspect_identity(root.path()), Probe::Schema(999));
+        assert_eq!(inspect(root.path()), Probe::Schema(999));
+        connection.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(inspect_identity(root.path()), Probe::Schema(999));
+        connection
+            .pragma_update(None, "user_version", 1001)
+            .unwrap();
+        assert_eq!(inspect_identity(root.path()), Probe::Schema(1001));
+        assert_eq!(inspect(root.path()), Probe::Schema(1001));
+    }
+    #[test]
+    fn identity_accepts_both_wal_checksum_byte_orders_as_sqlite_does() {
+        let source = tempfile::tempdir().unwrap();
+        let _connection = identity_fixture(source.path(), 4096);
+        let target = tempfile::tempdir().unwrap();
+        fs::copy(
+            source.path().join("memory.sqlite"),
+            target.path().join("memory.sqlite"),
+        )
+        .unwrap();
+        let mut wal = fs::read(source.path().join("memory.sqlite-wal")).unwrap();
+        let big_endian = be32(&wal[..4]) != 0x377f0683;
+        wal[..4].copy_from_slice(
+            &(if big_endian {
+                0x377f0683_u32
+            } else {
+                0x377f0682_u32
+            })
+            .to_be_bytes(),
+        );
+        let mut checksum = [0, 0];
+        wal_checksum(&wal[..24], big_endian, &mut checksum);
+        wal[24..28].copy_from_slice(&checksum[0].to_be_bytes());
+        wal[28..32].copy_from_slice(&checksum[1].to_be_bytes());
+        for frame in wal[32..].as_chunks_mut::<{ 24 + 4096 }>().0 {
+            wal_checksum(&frame[..8], big_endian, &mut checksum);
+            wal_checksum(&frame[24..], big_endian, &mut checksum);
+            frame[16..20].copy_from_slice(&checksum[0].to_be_bytes());
+            frame[20..24].copy_from_slice(&checksum[1].to_be_bytes());
+        }
+        fs::write(target.path().join("memory.sqlite-wal"), wal).unwrap();
+        let before = bytes(target.path());
+        assert_eq!(inspect_identity(target.path()), Probe::Schema(999));
+        assert_eq!(inspect(target.path()), Probe::Schema(999));
+        assert_eq!(bytes(target.path()), before);
+    }
+    #[test]
+    fn identity_stops_at_invalid_wal_checksum_like_sqlite_recovery() {
+        let source = tempfile::tempdir().unwrap();
+        let connection = identity_fixture(source.path(), 4096);
+        connection
+            .pragma_update(None, "user_version", 1000)
+            .unwrap();
+        let target = tempfile::tempdir().unwrap();
+        fs::copy(
+            source.path().join("memory.sqlite"),
+            target.path().join("memory.sqlite"),
+        )
+        .unwrap();
+        let mut wal = fs::read(source.path().join("memory.sqlite-wal")).unwrap();
+        let end = wal.len();
+        // Damage the last committed frame so recovery uses the preceding commit.
+        wal[end - 1] ^= 1;
+        fs::write(target.path().join("memory.sqlite-wal"), wal).unwrap();
+        let before = bytes(target.path());
+        assert_eq!(inspect_identity(target.path()), Probe::Schema(999));
+        assert_eq!(inspect(target.path()), Probe::Schema(999));
+        assert_eq!(bytes(target.path()), before);
+    }
+    #[test]
+    fn identity_rejects_corrupt_header_and_preserves_files() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("memory.sqlite"), [0x55; 100]).unwrap();
+        let before = bytes(root.path());
+        assert_eq!(inspect_identity(root.path()), Probe::InvalidDatabase);
+        assert_eq!(bytes(root.path()), before);
     }
 
     #[cfg(windows)]
@@ -370,7 +698,7 @@ mod tests {
 
     #[test]
     fn identity_headers_do_not_make_an_incomplete_store_compatible() {
-        for version in [1, 2, 3] {
+        for version in [1, 2, 3, 4] {
             let root = tempfile::tempdir().unwrap();
             let connection = Connection::open(root.path().join("memory.sqlite")).unwrap();
             connection
@@ -394,7 +722,7 @@ mod tests {
             "DROP INDEX memory_images_owner".to_owned(),
             "ALTER TABLE memory_images RENAME COLUMN metadata TO missing_metadata".to_owned(),
         ];
-        for table in ["memories", "edges", "memory_images"] {
+        for table in ["memories", "edges", "memory_images", "creation_receipts"] {
             for operation in ["INSERT", "UPDATE", "DELETE"] {
                 removals.push(format!("DROP TRIGGER guard_{table}_{operation}"));
             }
@@ -402,7 +730,10 @@ mod tests {
         for sql in removals {
             let root = tempfile::tempdir().unwrap();
             let connection = crate::database::open(root.path()).unwrap();
-            assert_eq!(inspect(root.path()), Probe::Schema(3));
+            assert_eq!(
+                inspect(root.path()),
+                Probe::Schema(crate::database::VERSION)
+            );
             connection.execute_batch(&sql).unwrap();
             drop(connection);
             let before = bytes(root.path());

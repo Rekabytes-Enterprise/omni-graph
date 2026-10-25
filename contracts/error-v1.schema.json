@@ -26,7 +26,8 @@
             "unsupported_schema",
             "migration_failed",
             "backup_failed",
-            "schema_changed"
+            "schema_changed",
+            "idempotency_conflict"
           ]
         },
         "message": {
@@ -41,7 +42,8 @@
             2,
             12,
             16,
-            17
+            17,
+            18
           ]
         }
       },

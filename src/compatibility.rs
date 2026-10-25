@@ -186,7 +186,9 @@ pub fn inspect(paths: Vec<PathBuf>) -> anyhow::Result<Report> {
                 Probe::Missing => (Status::MissingStore, None),
                 Probe::Legacy => (Status::LegacyMigrationRequired, None),
                 Probe::Schema(v) if v == crate::database::VERSION => (Status::Compatible, Some(v)),
-                Probe::Schema(v) if [1, 2].contains(&v) => (Status::MigrationRequired, Some(v)),
+                Probe::Schema(v) if crate::database::MIGRATABLE.contains(&v) => {
+                    (Status::MigrationRequired, Some(v))
+                }
                 Probe::Schema(v) => (Status::UnsupportedSchema, Some(v)),
                 Probe::PermissionDenied => (Status::PermissionDenied, None),
                 Probe::InvalidDatabase => (Status::InvalidDatabase, None),
@@ -223,7 +225,7 @@ pub fn inspect(paths: Vec<PathBuf>) -> anyhow::Result<Report> {
         database: DatabaseSupport {
             read_versions: vec![crate::database::VERSION],
             write_versions: vec![crate::database::VERSION],
-            migratable_versions: vec![1, 2],
+            migratable_versions: crate::database::MIGRATABLE.to_vec(),
             migration_target: crate::database::VERSION,
             migration_policy: "automatic_on_open_with_backup",
         },
@@ -234,6 +236,7 @@ pub fn inspect(paths: Vec<PathBuf>) -> anyhow::Result<Report> {
             "fts5_search",
             "graph_recall",
             "atomic_memory_links",
+            "idempotent_creation",
             "image_attachments",
             "shared_export_import",
             "migration_backup",

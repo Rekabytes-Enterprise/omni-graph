@@ -45,8 +45,11 @@ transaction or not at all. Incoming edges must share the new record's database;
 outgoing references to accessible broader scopes are allowed by normal scope
 rules. Do not reverse edges or copy private evidence to bypass these restrictions.
 
-A rejected linked creation leaves no memory to repair. After a lost response,
-search before retrying because creation is not idempotent. A separate `link`
+A rejected linked creation leaves no memory to repair. For retry-safe creation, use `--idempotency-key` when the executable advertises
+`idempotent_creation`. Keep the same key, payload and image content across retries;
+changed requests conflict. The replay returns the original creation response, so
+use `show` when current state matters. Without a key, search after a lost response
+before deciding whether to create again. A separate `link`
 failure does not undo a previously saved memory: reuse its ID when repairing it.
 If no relation is justified, omit `links` or use `[]`; do not create a new memory
 merely to explain an isolated node. On older versions without linked creation,

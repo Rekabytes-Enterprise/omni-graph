@@ -30,7 +30,7 @@ aggregate response without hiding individual store outcomes.
 ## Separate version namespaces
 
 The executable's package version identifies a build lineage. API 1 identifies the
-public integration contract. SQLite schema 3 identifies private persistence.
+public integration contract. SQLite schema 4 identifies private persistence.
 Interchange JSON schema versions are separate again. Capability names let a client
 check the feature it needs without guessing from package versions.
 
@@ -43,7 +43,8 @@ errors carry stable codes and recovery text.
 ## Migrate once, fence old writers
 
 Existing migration logic remains in `database.rs`. Schema 1 gains image storage;
-schemas 1 and 2 gain schema 3 writer fences and updated private FTS storage. The
+schemas 1 and 2 gain writer fences and updated private FTS storage. Schemas 1–3
+gain schema-4 creation receipts and version-4 writer guards. The
 schema version changes only inside the migration transaction.
 
 A filesystem lock coordinates current setup processes, while `BEGIN IMMEDIATE`
@@ -74,7 +75,7 @@ atomic. There is no automatic downgrade.
 
 ## Verification boundaries
 
-Maintain fixtures for supported SQLite schemas 1 and 2, including records,
+Maintain fixtures for supported SQLite schemas 1, 2 and 3, including records,
 relationships, metadata, and schema-2 images. Verify IDs and contents survive,
 search still works, and backups contain committed WAL data. Test migration failure
 and rollback, a writer held before migration, a retained old connection after
@@ -90,3 +91,14 @@ Do not equate successful compilation, a tag, or a release upload with passing th
 checks. Report the actual commands run and their results in each handoff. This
 source-level contract does not establish compatibility with untested future schemas,
 arbitrary old executable releases, or an LTS support period.
+
+## Ordinary reads
+
+Ordinary opening uses `inspect_identity`: two matching streamed observations of the
+main header and committed WAL page-one identity, validating WAL salts and checksums.
+It performs no full database copies. Required structures are checked on connection;
+unaccessed corrupt data pages require explicit compatibility inspection or doctor.
+Memory usage is bounded by a WAL page, but I/O still scales with active WAL size.
+Search and recall hold one read transaction per store and fetch lexical matches,
+recall preferences/constraints, and bounded graph neighbors. Empty searches retain
+the full-record path. Candidate scoring and ordering remain shared with retrieval.

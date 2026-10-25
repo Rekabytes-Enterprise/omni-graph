@@ -219,7 +219,7 @@ fn image_schema_migration_preserves_existing_records_and_edges() {
     let connection =
         rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
     connection
-        .execute_batch("DROP TABLE memory_images; DROP TRIGGER guard_memories_INSERT; DROP TRIGGER guard_memories_UPDATE; DROP TRIGGER guard_memories_DELETE; DROP TRIGGER guard_edges_INSERT; DROP TRIGGER guard_edges_UPDATE; DROP TRIGGER guard_edges_DELETE; ALTER TABLE memory_search RENAME TO memory_fts; PRAGMA user_version=1;")
+        .execute_batch("DROP TABLE creation_receipts; DROP TABLE memory_images; DROP TRIGGER guard_memories_INSERT; DROP TRIGGER guard_memories_UPDATE; DROP TRIGGER guard_memories_DELETE; DROP TRIGGER guard_edges_INSERT; DROP TRIGGER guard_edges_UPDATE; DROP TRIGGER guard_edges_DELETE; ALTER TABLE memory_search RENAME TO memory_fts; PRAGMA user_version=1;")
         .unwrap();
     drop(connection);
     assert_eq!(f.ok(&["graph", "--all"]), before);
@@ -235,7 +235,7 @@ fn image_schema_migration_preserves_existing_records_and_edges() {
         connection
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        3
+        4
     );
 }
 
@@ -255,7 +255,7 @@ fn image_reads_reject_corrupt_bytes_without_overwriting_output() {
             "omni_graph_write_schema",
             0,
             rusqlite::functions::FunctionFlags::SQLITE_UTF8,
-            |_| Ok(3_i64),
+            |_| Ok(4_i64),
         )
         .unwrap();
     connection
@@ -1563,4 +1563,159 @@ fn remote_access_rejects_missing_or_invalid_email_before_starting_services() {
         assert!(String::from_utf8_lossy(&output.stderr).contains("email"));
         assert!(!f.temp.path().join("home/tools").exists());
     }
+}
+
+#[test]
+fn idempotent_creation_replays_original_response_after_edits_and_scope_keys_are_independent() {
+    let f = Fixture::new();
+    let input = json!({"title":"Retry safe record","body":"original","idempotency_key":"job:42"});
+    let first = f.stdin(&["remember", "--file", "-"], input.clone());
+    let replay = f.stdin(&["remember", "--file", "-"], input.clone());
+    assert_eq!(first, replay);
+    f.stdin(
+        &["update", id(&first), "--file", "-"],
+        json!({"body":"edited","status":"archived"}),
+    );
+    assert_eq!(first, f.stdin(&["remember", "--file", "-"], input));
+    let global=f.stdin(&["remember","--file","-"],json!({"title":"Retry safe record","body":"global","scope":"global","idempotency_key":"job:42"}));
+    assert_ne!(id(&global), id(&first));
+    let records = f.ok(&["list", "--all"]);
+    assert_eq!(records.as_array().unwrap().len(), 2);
+    assert!(
+        records
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["body"] == "edited")
+    );
+}
+
+#[test]
+fn idempotent_creation_conflicts_are_structured_and_do_not_change_data() {
+    let f = Fixture::new();
+    let original =
+        json!({"title":"Stable request","body":"secret original","idempotency_key":"req-1"});
+    let first = f.stdin(&["remember", "--file", "-"], original.clone());
+    let before = f.ok(&["graph"]);
+    let out = f.input(
+        &["remember", "--file", "-", "--api-version", "1"],
+        json!({"title":"Changed request","idempotency_key":"req-1"}),
+    );
+    assert_eq!(out.status.code(), Some(18));
+    assert!(out.stderr.is_empty());
+    let error: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(error["error"]["code"], "idempotency_conflict");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("secret original"));
+    assert_eq!(before, f.ok(&["graph"]));
+    assert_eq!(
+        first,
+        f.stdin(
+            &["remember", "--file", "-", "--idempotency-key", "req-1"],
+            original
+        )
+    );
+    let out = f.input(
+        &[
+            "remember",
+            "--file",
+            "-",
+            "--idempotency-key",
+            "different",
+            "--api-version",
+            "1",
+        ],
+        json!({"title":"x","idempotency_key":"req-1"}),
+    );
+    assert_eq!(out.status.code(), Some(2));
+    for key in ["", "spaces are invalid", "界", &"x".repeat(129)] {
+        let out = f.input(
+            &["remember", "--file", "-", "--api-version", "1"],
+            json!({"title":"Invalid key","idempotency_key":key}),
+        );
+        assert_eq!(out.status.code(), Some(2));
+    }
+}
+
+#[test]
+fn idempotent_creation_concurrent_retries_commit_once() {
+    let f = Fixture::new();
+    let mut children = vec![];
+    for _ in 0..8 {
+        let child = f
+            .cmd(
+                &f.root(),
+                &[
+                    "remember",
+                    "--title",
+                    "Concurrent retry",
+                    "--idempotency-key",
+                    "concurrent-key",
+                ],
+            )
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        children.push(child);
+    }
+    let outputs: Vec<_> = children
+        .into_iter()
+        .map(|child| parse(child.wait_with_output().unwrap()))
+        .collect();
+    assert!(outputs.iter().all(|output| output == &outputs[0]));
+    assert_eq!(f.ok(&["list"]).as_array().unwrap().len(), 1);
+    let conn = rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM creation_receipts", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn idempotency_receipt_failure_rolls_back_memory_links_and_images() {
+    let f = Fixture::new();
+    let parent = f.memory(json!({"title":"Parent"}));
+    let path = sample_image(&f);
+    let conn = rusqlite::Connection::open(f.root().join(".omni-graph/memory.sqlite")).unwrap();
+    conn.execute_batch("CREATE TRIGGER fail_receipt BEFORE INSERT ON creation_receipts BEGIN SELECT RAISE(ABORT,'receipt failure'); END;").unwrap();
+    let input = json!({"title":"Atomic retry","idempotency_key":"atomic-1","links":[{"relation":"belongs_to","to":id(&parent)}],"images":[{"file":path,"caption":"reference"}]});
+    let out = f.input(&["remember", "--file", "-"], input.clone());
+    assert!(!out.status.success());
+    assert_eq!(f.ok(&["list"]).as_array().unwrap().len(), 1);
+    for table in ["creation_receipts", "memory_images", "edges"] {
+        assert_eq!(
+            conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+    conn.execute_batch("DROP TRIGGER fail_receipt").unwrap();
+    let saved = f.stdin(&["remember", "--file", "-"], input.clone());
+    let images = f.ok(&["image", "list", id(&saved)]);
+    assert_eq!(images.as_array().unwrap().len(), 1);
+    assert_eq!(saved, f.stdin(&["remember", "--file", "-"], input.clone()));
+    assert_eq!(images, f.ok(&["image", "list", id(&saved)]));
+    let mut changed = input;
+    changed["images"][0]["caption"] = json!("different reference");
+    let out = f.input(&["remember", "--file", "-", "--api-version", "1"], changed);
+    assert_eq!(out.status.code(), Some(18));
+}
+
+#[test]
+fn failed_creation_does_not_reserve_key_and_unkeyed_writes_keep_existing_behavior() {
+    let f = Fixture::new();
+    let out=f.input(&["remember","--file","-"],json!({"title":"Failed attempt","idempotency_key":"retry","links":[{"relation":"belongs_to","to":"mem_missing"}]}));
+    assert!(!out.status.success());
+    let saved = f.stdin(
+        &["remember", "--file", "-"],
+        json!({"title":"Successful retry","idempotency_key":"retry"}),
+    );
+    assert!(!id(&saved).is_empty());
+    assert!(
+        f.fail(&["remember", "--title", "Successful retry"])
+            .contains("already exists")
+    );
 }

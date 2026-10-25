@@ -33,7 +33,15 @@ fn failure(code: &'static str, recovery: &'static str, message: String) -> anyho
     }
     .into()
 }
-pub const VERSION: i64 = 3;
+pub const VERSION: i64 = 4;
+pub const MIGRATABLE: &[i64] = &[1, 2, 3];
+const RECEIPTS: &str = "CREATE TABLE creation_receipts (
+    namespace TEXT NOT NULL,
+    key TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response TEXT NOT NULL CHECK(json_valid(response)),
+    PRIMARY KEY(namespace,key)
+);";
 const IMAGES: &str = "CREATE TABLE memory_images (
     id TEXT PRIMARY KEY NOT NULL,
     memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
@@ -163,6 +171,7 @@ pub fn open(directory: &Path) -> Result<Connection> {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(SCHEMA)?;
         tx.execute_batch(IMAGES)?;
+        tx.execute_batch(RECEIPTS)?;
         install_write_fences(&tx)?;
         save(&tx, &Graph::default(), &graph)?;
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
@@ -170,6 +179,10 @@ pub fn open(directory: &Path) -> Result<Connection> {
         tx.commit()?;
     } else {
         validate_identity(&connection, version)?;
+        ensure!(
+            crate::compatibility_probe::known_structure(&connection, version)?,
+            "memory.sqlite has incomplete or invalid Omni-graph schema; preserve it and recover from a verified backup"
+        );
         if version < VERSION {
             // The filesystem lock coordinates current clients; SQLite's writer lock
             // also excludes writers from binaries that predate that lock protocol.
@@ -203,7 +216,7 @@ pub fn preflight(directory: &Path) -> Result<()> {
     use crate::compatibility_probe::Probe;
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     let result = loop {
-        let result = crate::compatibility_probe::inspect(directory);
+        let result = crate::compatibility_probe::inspect_identity(directory);
         // Windows can also report access denied while a WAL file is delete-pending.
         // Retry it for normal opening, but preserve the final permission diagnosis.
         let retryable =
@@ -220,7 +233,7 @@ pub fn preflight(directory: &Path) -> Result<()> {
             "unsupported_schema",
             "Use an executable that supports the detected schema; never downgrade the database.",
             format!(
-                "unsupported SQLite schema {version}; this executable supports schema {VERSION} and migrations from 1 or 2"
+                "unsupported SQLite schema {version}; this executable supports schema {VERSION} and migrations from 1, 2 or 3"
             ),
         )),
         Probe::PermissionDenied => {
@@ -261,7 +274,7 @@ fn validate_identity(connection: &Connection, version: i64) -> Result<()> {
             "unsupported_schema",
             "Use an executable that supports the detected schema; never downgrade the database.",
             format!(
-                "unsupported SQLite schema {version}; this executable supports schema {VERSION} and migrations from 1 or 2"
+                "unsupported SQLite schema {version}; this executable supports schema {VERSION} and migrations from 1, 2 or 3"
             ),
         ));
     }
@@ -288,7 +301,7 @@ pub fn write_transaction(connection: &mut Connection) -> Result<Transaction<'_>>
     Ok(tx)
 }
 fn install_write_fences(connection: &Connection) -> Result<()> {
-    for table in ["memories", "edges", "memory_images"] {
+    for table in ["memories", "edges", "memory_images", "creation_receipts"] {
         for operation in ["INSERT", "UPDATE", "DELETE"] {
             connection.execute_batch(&format!(
                 "CREATE TRIGGER guard_{table}_{operation} BEFORE {operation} ON {table} BEGIN SELECT CASE WHEN omni_graph_write_schema() <> {VERSION} THEN RAISE(ABORT, 'incompatible Omni-graph writer; update executable') END; END;"
@@ -298,21 +311,31 @@ fn install_write_fences(connection: &Connection) -> Result<()> {
     Ok(())
 }
 fn migrate(connection: &Connection, from: i64) -> Result<()> {
+    ensure!(MIGRATABLE.contains(&from), "unsupported migration source");
     if from == 1 {
         connection.execute_batch(IMAGES)?;
     }
-    // Rename the private search table as well: old reindex/check commands must
-    // fail closed instead of mutating indexes through an unguarded virtual table.
-    connection.execute_batch("DROP TRIGGER memories_insert; DROP TRIGGER memories_delete; DROP TRIGGER memories_update; ALTER TABLE memory_fts RENAME TO memory_search;")?;
-    let triggers = SCHEMA
-        .split_once("CREATE TRIGGER memories_insert")
-        .expect("schema includes FTS triggers")
-        .1;
-    connection.execute_batch(&format!("CREATE TRIGGER memories_insert{triggers}"))?;
+    if from <= 2 {
+        // Fence historical FTS writes, which cannot use ordinary table triggers.
+        connection.execute_batch("DROP TRIGGER memories_insert; DROP TRIGGER memories_delete; DROP TRIGGER memories_update; ALTER TABLE memory_fts RENAME TO memory_search;")?;
+        let triggers = SCHEMA
+            .split_once("CREATE TRIGGER memories_insert")
+            .expect("schema includes FTS triggers")
+            .1;
+        connection.execute_batch(&format!("CREATE TRIGGER memories_insert{triggers}"))?;
+    } else {
+        for table in ["memories", "edges", "memory_images"] {
+            for operation in ["INSERT", "UPDATE", "DELETE"] {
+                connection.execute_batch(&format!("DROP TRIGGER guard_{table}_{operation};"))?;
+            }
+        }
+    }
+    connection.execute_batch(RECEIPTS)?;
     install_write_fences(connection)?;
     connection.pragma_update(None, "user_version", VERSION)?;
     Ok(())
 }
+
 fn backup_before_migration(path: &Path, version: i64) -> Result<std::path::PathBuf> {
     let directory = path.parent().context("database has no parent directory")?;
     let temporary = tempfile::NamedTempFile::new_in(directory)?;
@@ -487,10 +510,29 @@ mod tests {
     fn historical(directory: &Path, version: i64) -> Connection {
         let connection = Connection::open(directory.join("memory.sqlite")).unwrap();
         connection
-            .execute_batch(&SCHEMA.replace("memory_search", "memory_fts"))
+            .execute_batch(&if version >= 3 {
+                SCHEMA.to_owned()
+            } else {
+                SCHEMA.replace("memory_search", "memory_fts")
+            })
             .unwrap();
-        if version == 2 {
+        if version >= 2 {
             connection.execute_batch(IMAGES).unwrap();
+        }
+        if version == 3 {
+            connection
+                .create_scalar_function(
+                    "omni_graph_write_schema",
+                    0,
+                    FunctionFlags::SQLITE_UTF8,
+                    |_| Ok(3),
+                )
+                .unwrap();
+            for table in ["memories", "edges", "memory_images"] {
+                for operation in ["INSERT", "UPDATE", "DELETE"] {
+                    connection.execute_batch(&format!("CREATE TRIGGER guard_{table}_{operation} BEFORE {operation} ON {table} BEGIN SELECT CASE WHEN omni_graph_write_schema() <> 3 THEN RAISE(ABORT, 'incompatible writer') END; END;")).unwrap();
+                }
+            }
         }
         connection
             .pragma_update(None, "application_id", APPLICATION_ID)
@@ -542,10 +584,10 @@ mod tests {
     }
     #[test]
     fn migrates_both_historical_schemas_and_backs_up_committed_wal() {
-        for version in [1, 2] {
+        for version in [1, 2, 3] {
             let directory = tempfile::tempdir().unwrap();
             let old = historical(directory.path(), version);
-            if version == 2 {
+            if version >= 2 {
                 old.execute("INSERT INTO memory_images VALUES('img_one','mem_one','{\"caption\":\"Reference\"}',x'010203')", []).unwrap();
             }
             let expected = records(&old);
@@ -579,7 +621,7 @@ mod tests {
                     .unwrap(),
                 1
             );
-            if version == 2 {
+            if version >= 2 {
                 assert_eq!(
                     current
                         .query_row("SELECT data FROM memory_images", [], |r| r
@@ -642,6 +684,48 @@ mod tests {
         }
         let backup = Connection::open(&backups(directory.path())[0]).unwrap();
         assert!(records(&backup)[0].contains("Committed during migration startup"));
+    }
+    #[test]
+    fn schema_three_live_writer_is_fenced_and_receipts_commit_with_the_memory_transaction() {
+        let directory = tempfile::tempdir().unwrap();
+        let old = historical(directory.path(), 3);
+        let mut current = open(directory.path()).unwrap();
+        assert!(
+            old.execute("UPDATE memories SET record=record WHERE id='mem_one'", [])
+                .is_err()
+        );
+        assert!(
+            old.execute("DELETE FROM edges WHERE source='mem_one'", [])
+                .is_err()
+        );
+        let tx = write_transaction(&mut current).unwrap();
+        tx.execute(
+            "INSERT INTO creation_receipts VALUES('project','request1','hash','{}')",
+            [],
+        )
+        .unwrap();
+        tx.rollback().unwrap();
+        assert_eq!(
+            current
+                .query_row("SELECT count(*) FROM creation_receipts", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        let tx = write_transaction(&mut current).unwrap();
+        tx.execute(
+            "INSERT INTO creation_receipts VALUES('project','request1','hash','{}')",
+            [],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        assert_eq!(
+            current
+                .query_row("SELECT count(*) FROM creation_receipts", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
     }
     #[test]
     fn migration_failure_rolls_back_and_retains_usable_backup() {

@@ -31,7 +31,7 @@ test('discovery missing/compatible, capabilities, exact executable and selection
    assert.equal(f.run('list','--json').status,0);
    const report=check(f.run('compatibility','--api-version','1','--json'),reportSchema,0);
    assert.equal(toNamespacedPath(report.executable.path),toNamespacedPath(binary)); assert.equal(report.stores.length,2);
-   assert.deepEqual(report.database.read_versions,[3]); assert.deepEqual(report.database.migratable_versions,[1,2]);
+   assert.deepEqual(report.database.read_versions,[4]); assert.deepEqual(report.database.migratable_versions,[1,2,3]);
    assert.ok(report.capabilities.includes('writer_fencing'));
    assert.equal(check(f.run('compatibility','--scope','global','--json'),reportSchema,0).stores.length,1);
    const selected=check(f.run('compatibility','--scope','project','--json'),reportSchema,0).stores[0].path;

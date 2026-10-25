@@ -237,7 +237,7 @@ pub struct Edge {
 }
 
 /// One endpoint is the newly created memory; the other must already exist.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateLink {
     pub relation: Relation,

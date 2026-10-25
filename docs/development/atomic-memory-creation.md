@@ -59,7 +59,9 @@ for batch creation and the existing link command.
 
 We accept a single-store write boundary in exchange for reliable local atomicity.
 We retain the standalone link command for relationships discovered later; it is
-not needed to finish a linked creation request. No schema migration is required.
-Requests do not have idempotency keys: after a lost success response, search before
-retrying. A confirmed failed request writes nothing; ambiguous transport/process
-failure still requires checking current state.
+not needed to finish a linked creation request. Optional retry keys now use schema-4
+creation receipts in the same transaction. The receipt is rechecked under the writer
+lock, so concurrent identical requests return the same ID. Key normalization and
+request fingerprint version 1 are durable contracts: future MemoryInput changes
+must preserve their canonical representation or support prior fingerprint versions.
+See the [public retry contract](../integration-contract.md#retry-safe-creation).

@@ -1,6 +1,6 @@
 {
   "name": "omni-graph",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Shared memory and a Rust graph TUI for AI coding agents",
   "type": "module",
   "license": "MIT",
@@ -24,11 +24,12 @@
   "scripts": {
     "build": "cargo build --release",
     "web:vendor": "node scripts/vendor-web.mjs",
-    "test": "cargo test && node --test tests/launcher.test.mjs tests/install.test.mjs tests/version.test.mjs tests/web.test.mjs tests/compatibility.test.mjs",
+    "test": "cargo test && node --test tests/launcher.test.mjs tests/install.test.mjs tests/version.test.mjs tests/web.test.mjs tests/compatibility.test.mjs tests/benchmark.test.mjs",
     "check": "node scripts/version.mjs check && cargo fmt --check && cargo clippy --all-targets -- -D warnings",
     "prepublishOnly": "node scripts/check-package.mjs",
     "version:bump": "node scripts/version.mjs",
-    "version:check": "node scripts/version.mjs check"
+    "version:check": "node scripts/version.mjs check",
+    "benchmark:recall": "node scripts/benchmark-recall.mjs"
   },
   "keywords": [
     "agents",

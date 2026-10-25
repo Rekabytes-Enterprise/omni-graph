@@ -155,6 +155,33 @@ impl Store {
         tx.commit()?;
         Ok(value)
     }
+    fn create_transaction(
+        &self,
+        images: &[crate::attachments::PreparedImage],
+        receipt: Option<&crate::idempotency::Receipt>,
+        f: impl FnOnce(&mut Graph) -> Result<Memory>,
+    ) -> Result<Memory> {
+        let mut connection = self.connection()?;
+        let tx = database::write_transaction(&mut connection)?;
+        if let Some(receipt) = receipt
+            && let Some(saved) = receipt.replay(&tx)?
+        {
+            tx.commit()?;
+            return Ok(saved);
+        }
+        let before = database::load(&tx)?;
+        let mut graph = before.clone();
+        let saved = f(&mut graph)?;
+        database::save(&tx, &before, &graph)?;
+        for image in images {
+            crate::attachments::insert(&tx, image)?;
+        }
+        if let Some(receipt) = receipt {
+            receipt.save(&tx, &saved)?;
+        }
+        tx.commit()?;
+        Ok(saved)
+    }
     pub fn check(&self) -> Result<()> {
         let mut connection = self.connection()?;
         let tx = database::write_transaction(&mut connection)?;
@@ -254,7 +281,7 @@ impl Workspace {
         ranks.retain(|id, _| ids.contains(id));
         Ok((graph, ranks))
     }
-    fn visible(&self, m: &Memory) -> bool {
+    pub(crate) fn visible(&self, m: &Memory) -> bool {
         match m.data.scope {
             Scope::Global => m.project_id.is_none() && m.client_id.is_none(),
             Scope::Client => {
@@ -280,9 +307,18 @@ impl Workspace {
     }
     pub fn create_with_images(
         &self,
+        data: MemoryInput,
+        links: &[CreateLink],
+        images: &[crate::attachments::ImageInput],
+    ) -> Result<Memory> {
+        self.create_with_key(data, links, images, None)
+    }
+    pub fn create_with_key(
+        &self,
         mut data: MemoryInput,
         links: &[CreateLink],
         images: &[crate::attachments::ImageInput],
+        key: Option<&str>,
     ) -> Result<Memory> {
         data.validate()?;
         ensure!(
@@ -293,26 +329,6 @@ impl Workspace {
             data.summary = data.body.chars().take(200).collect();
         }
         let store = self.store(data.scope)?;
-        // Resolve only accessible endpoints. Same-store records are read again under
-        // the write transaction; broader stores are read-only references.
-        let accessible: HashMap<_, _> = if links.is_empty() {
-            HashMap::new()
-        } else {
-            self.snapshot()?
-                .memories
-                .into_iter()
-                .map(|m| (m.id.clone(), m))
-                .collect()
-        };
-        let endpoints: Vec<_> = links.iter().map(|link| {
-            let id = link.endpoint()?;
-            let other = accessible.get(id)
-                .with_context(|| format!("memory {id} not found in this project's accessible scopes"))?.clone();
-            let local = self.store(other.data.scope)?.path == store.path;
-            ensure!(link.from.is_none() || local,
-                "incoming links must share the new memory's store; atomic creation cannot write multiple stores");
-            Ok((other, local))
-        }).collect::<Result<_>>()?;
         let stamp = now();
         let memory = Memory {
             id: id("mem"),
@@ -334,7 +350,34 @@ impl Workspace {
             .iter()
             .map(|image| image.prepare(&memory.id))
             .collect::<Result<Vec<_>>>()?;
-        store.change_with_images(&prepared, |g| {
+        let receipt = key
+            .map(|key| crate::idempotency::Receipt::new(key, &memory, links, &prepared))
+            .transpose()?;
+        // Replay before resolving links, then check again under the write lock.
+        // Resolving other stores must never happen while holding this store's writer lock.
+        if let Some(receipt) = &receipt
+            && let Some(saved) = receipt.replay(&store.connection()?)?
+        {
+            return Ok(saved);
+        }
+        let accessible: HashMap<_, _> = if links.is_empty() {
+            HashMap::new()
+        } else {
+            self.snapshot()?
+                .memories
+                .into_iter()
+                .map(|m| (m.id.clone(), m))
+                .collect()
+        };
+        let endpoints = links.iter().map(|link| {
+            let id = link.endpoint()?;
+            let other = accessible.get(id).with_context(|| format!("memory {id} not found in this project's accessible scopes"))?.clone();
+            let local = self.store(other.data.scope)?.path == store.path;
+            ensure!(link.from.is_none() || local,
+                "incoming links must share the new memory's store; atomic creation cannot write multiple stores");
+            Ok((other,local))
+        }).collect::<Result<Vec<_>>>()?;
+        store.create_transaction(&prepared, receipt.as_ref(), |g| {
             ensure!(
                 !g.memories.iter().any(|m| m.data.scope == memory.data.scope
                     && m.project_id == memory.project_id

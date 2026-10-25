@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7
+
+- Reduce ordinary store-opening I/O and fetch recall/search candidates and neighbors selectively.
+- Add an isolated recall benchmark with relevance, latency and response-size measurements.
+- Add retry-safe memory creation with optional idempotency keys and atomic creation receipts.
+- Migrate schemas 1–3 to schema 4 with verified backups and refreshed writer fences.
+
 ## 0.2.6
 
 - Add read-only compatibility discovery, API 1 negotiation, structured errors, JSON schemas, and consumer-neutral integration guidance.

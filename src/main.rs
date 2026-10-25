@@ -6,6 +6,7 @@ mod idempotency;
 mod install;
 mod integrations;
 mod model;
+mod preparation;
 mod query;
 mod retrieval;
 mod storage;
@@ -13,6 +14,7 @@ mod transfer;
 mod tui;
 mod ui;
 mod update;
+mod upgrade;
 mod web;
 
 use clap::Parser;
@@ -39,7 +41,7 @@ fn main() {
         if value.to_string_lossy().starts_with('-') {
             continue;
         }
-        discovery = value == "compatibility";
+        discovery = value == "compatibility" || value == "prepare";
         break;
     }
     let contract_requested = explicit_api || discovery;
@@ -67,6 +69,18 @@ fn main() {
     }
     if let Some(cli::Command::Compatibility { scope, store }) = &cli.command {
         match compatibility::run(&cli, *scope, store.as_deref()) {
+            Ok(code) => std::process::exit(code),
+            Err(error) => emit_contract_error(error),
+        }
+    }
+    if let Some(cli::Command::Prepare {
+        scope,
+        store,
+        registered,
+        initialize,
+    }) = &cli.command
+    {
+        match preparation::run(&cli, *scope, store.as_deref(), *registered, *initialize) {
             Ok(code) => std::process::exit(code),
             Err(error) => emit_contract_error(error),
         }

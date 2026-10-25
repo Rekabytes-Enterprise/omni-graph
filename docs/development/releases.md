@@ -9,6 +9,7 @@ A source push does not publish installation artifacts. The initial main commit h
 ```sh
 # On dev, before committing a release change:
 npm run version:bump -- patch
+npm ci --prefix sdk
 npm test
 npm run check
 # Commit and push dev; wait for Verify to pass.
@@ -31,7 +32,7 @@ nextVersion(current, requested) -> strictly higher stable version
 bumpVersion(root, requested) -> { previous, version }; update all three files
 ```
 
-`release.yml` owns platform builds and distribution. A gate runs before native builds. It checks main ancestry and version agreement. Native jobs produce five platform archives and npm-native directories. The package job validates completeness, creates the stable `omni-graph.tgz` asset, and emits SHA256SUMS. The publish job uploads the completed artifact set to a GitHub release for the already existing tag.
+`release.yml` owns platform builds and distribution. A gate runs before native builds. It checks main ancestry and version agreement. Native jobs produce five platform archives and npm-native directories. The package job validates completeness, creates the stable `omni-graph.tgz` and `omni-graph-sdk.tgz` assets, and emits SHA256SUMS. The publish job uploads the completed artifact set to a GitHub release for the already existing tag.
 
 Consumers use the native curl installer or `npx --package=https://github.com/Rekabytes-Enterprise/omni-graph/releases/latest/download/omni-graph.tgz omni-graph install`. A repository checkout is not a substitute for a release tarball because compiled native binaries are excluded from Git.
 
@@ -50,3 +51,17 @@ The second is the chosen shape. It concentrates version policy in one script and
 - GitHub-hosted npx installation uses the release tarball URL. The short registry name remains unavailable until a separate npm publication is authorized and authenticated.
 - Released assets are immutable; failed builds can be rerun before publication. Do not move an existing release tag to repair source.
 - Manual assembly is useful for checking artifacts but cannot bypass the main-only release gate.
+
+
+## SDK and upgrade checks
+
+The SDK is an independent package in `sdk/`. Build and test it through the root
+scripts; `npm ci --prefix sdk` installs its locked development tools. `npm pack
+--prefix sdk` is not a registry publication. Publish it only when explicitly
+requested, and test the packed package in a consumer directory before declaring it
+ready.
+
+Release validation must cover an existing API 1 consumer and pre-upgrade stores,
+not only fresh installs. Document old updater behavior: v0.2.7 self-update needs a
+one-time explicit preparation after binary replacement; the new installer and
+subsequent self-updates prepare validated registered stores themselves.

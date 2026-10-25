@@ -188,8 +188,9 @@ major; no time-based support guarantee or indefinite support is established here
 
 Schemas 1, 2 and 3 are migration inputs, not native read/write formats for this
 executable. Normal store opening, including a read command, automatically upgrades
-them. Compatibility inspection never does. No separate migration command is
-required. For a project, a normal `list --json` opens its accessible stores; perform
+them. Compatibility inspection never does. Integrations should use explicit `prepare`
+under their configured migration policy. Normal commands retain automatic migration
+for existing CLI users. For a project, a normal `list --json` opens its accessible stores; perform
 that step only once the operator has approved the migration through their own
 policy. Migration is atomic per store, not across global/client/project databases.
 
@@ -331,3 +332,62 @@ paths are not identity. Source files must still be readable and unchanged. Recei
 have no automatic expiry and stay in the owning local database; shared exports do
 not carry them. Standalone memories can still omit links. Receipts provide local
 retry safety, not deduplication across separate installations or restored snapshots.
+
+
+## Prepare and reconnect
+
+When `storage_preparation` is advertised, consumers can explicitly prepare selected
+stores without disguising migration as a list or search operation:
+
+```sh
+omni-graph --directory /path/to/project prepare --api-version 1 --json
+```
+
+The same `--scope` and `--store` selection rules apply as for compatibility.
+`--initialize` additionally authorizes missing-store initialization and legacy JSON
+import. It does not create a project configuration; use `init` for a new project.
+`--registered` selects user memory and validated registered project/client stores,
+reports stale registrations separately, and cannot be combined with `--scope` or
+`--store`. Install/update use registered preparation to keep existing API 1
+consumers working after supported upgrades.
+
+See [`preparation-v1.schema.json`](../contracts/preparation-v1.schema.json). The
+response contains `ready`, `exit_code`, per-store before/after reports, actions and
+sanitized errors, plus current `compatibility`. Consumers must check readiness and
+the process exit code. A successful binary replacement alone is not proof that
+stores are ready. Unsupported or inaccessible stores require resolution; no
+automatic downgrade, deletion or restoration occurs.
+
+All selected stores are inspected before any writes. A known blocker prevents
+preparation of the selection. Failures that occur later can leave earlier stores
+migrated; each store has its own transaction and backup. Repeat preparation after
+resolving the failure. Do not restore an earlier migrated store merely because
+another store failed.
+
+Retain the configured executable path across reconnects. An update may replace the
+binary or repoint a symlink there. Check API/capabilities again and apply the saved
+migration policy rather than trusting a cached package version. Do not blindly
+replay writes after process failure. Reuse the original key and payload for an
+idempotent creation retry.
+
+Existing integrations that reject `migration_required` continue to work when
+installation/update has prepared their registered stores. Consumers using
+unregistered stores, manual executable replacement, or older installers must
+explicitly prepare/reconnect. Read-only discovery keeps its original meaning.
+The [TypeScript SDK](../sdk/README.md) implements this connection workflow for Node.
+
+
+### Transition from the v0.2.7 self-updater
+
+The already-released v0.2.7 `update` implementation replaces the binary without
+running the new preparation hook. After using that old self-updater to obtain a
+version with this workflow, run the new executable once:
+
+```sh
+omni-graph prepare --registered --initialize --api-version 1 --json
+```
+
+Alternatively, use the new release's curl/npx installer. Future self-updates run
+preparation as part of update. This limitation belongs to the old executable; new
+code cannot retroactively change its completed update operation. No database schema
+bump is needed for this connection lifecycle change.

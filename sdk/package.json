@@ -1,0 +1,32 @@
+{
+  "name": "@omni-graph/sdk",
+  "version": "0.1.0",
+  "description": "Typed Node.js client for Omni-graph's local integration API",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "generate": "node scripts/generate-model.mjs",
+    "build": "tsc -p tsconfig.json",
+    "check": "node scripts/generate-model.mjs --check && tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.8
+
+- Add explicit, retryable store preparation with per-store migration outcomes while preserving read-only API 1 discovery.
+- Prepare registered memory stores during install/update so existing compatibility-gated apps can reconnect.
+- Add a TypeScript SDK for connection negotiation, supported migrations and typed memory operations.
+- Add upgrade regression tests covering existing stores and existing API 1 consumers.
+
 ## 0.2.7
 
 - Reduce ordinary store-opening I/O and fetch recall/search candidates and neighbors selectively.

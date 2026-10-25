@@ -46,10 +46,10 @@ impl Status {
                 "Initialize the intended project with init, or user memory with install, according to your installation policy."
             }
             Self::MigrationRequired => {
-                "Stop older Omni-graph processes. A normal store operation will back up and migrate this store. Recheck compatibility afterward."
+                "Stop older Omni-graph processes. Run prepare --json for the same selected stores to back up and migrate supported schemas, then recheck compatibility. Normal store opening also migrates."
             }
             Self::LegacyMigrationRequired => {
-                "Legacy graph.json requires validation and import by normal store opening. Preserve the original file and recheck afterward."
+                "Legacy graph.json requires validation and import. Preserve the original file; use prepare --initialize --json for the same selected stores when initialization is authorized, then recheck."
             }
             Self::UnsupportedSchema => {
                 "Use an executable that supports this schema. Update through the installation owner, then invoke that exact path and recheck. Do not downgrade or recreate the store."
@@ -72,7 +72,7 @@ impl Status {
         }
     }
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct StoreReport {
     pub path: PathBuf,
     pub detected_schema_version: Option<i64>,
@@ -231,6 +231,7 @@ pub fn inspect(paths: Vec<PathBuf>) -> anyhow::Result<Report> {
         },
         capabilities: vec![
             "compatibility",
+            "storage_preparation",
             "structured_errors",
             "memory_crud",
             "fts5_search",

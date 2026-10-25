@@ -302,7 +302,8 @@ pub fn run(cli: Cli) -> Result<()> {
             );
             crate::web::run(&workspace, args)
         }
-        Command::Compatibility { .. }
+        Command::Prepare { .. }
+        | Command::Compatibility { .. }
         | Command::Install
         | Command::Init(_)
         | Command::Client { .. } => unreachable!(),

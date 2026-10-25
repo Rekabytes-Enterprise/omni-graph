@@ -33,6 +33,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: npm ci --prefix sdk
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: npm test

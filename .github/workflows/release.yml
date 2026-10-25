@@ -117,6 +117,13 @@ jobs:
         run: |
           npm pack --pack-destination dist
           mv "dist/omni-graph-$(node -p "require('./package.json').version").tgz" dist/omni-graph.tgz
+      - name: Build and pack the TypeScript SDK
+        run: |
+          npm ci --prefix sdk
+          npm run check --prefix sdk
+          cd sdk
+          npm pack --pack-destination ../dist
+          mv "../dist/omni-graph-sdk-$(node -p "require('./package.json').version").tgz" ../dist/omni-graph-sdk.tgz
       - name: Assemble checksums
         run: |
           cp install.sh dist/install.sh

@@ -1,7 +1,7 @@
 mod shell;
 
 // Persistent user installation shared by npm and the standalone shell installer.
-use crate::storage::{self, Lock, Store};
+use crate::storage::{self, Lock};
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
 use std::{fs, path::Path};
@@ -16,11 +16,48 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
             storage::write(&home.join("registry.json"), &registry)?;
         }
     }
-    Store {
-        path: home.to_path_buf(),
+    let selection = crate::upgrade::registered_paths(home)?;
+    let inspection = crate::compatibility::inspect(selection.paths.clone())?;
+    if inspection
+        .stores
+        .iter()
+        .any(|s| !crate::preparation::allowed(s.status, true))
+    {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "installed": false, "ready": false, "compatibility": inspection,
+                    "skipped_registrations": selection.skipped
+                }))?
+            );
+            std::process::exit(inspection.exit_code.max(1));
+        }
+        anyhow::bail!(
+            "Memory storage preflight is blocked; installation was not replaced. Run `omni-graph prepare --registered --initialize --json` to inspect per-store results. Existing memories are preserved."
+        );
     }
-    .load()?;
+    // Make the compatible engine durable before any migration. A later store may
+    // fail after an earlier store commits; its recovery engine must remain installed.
     let target = replace(home, &source)?;
+    let mut preparation = crate::preparation::prepare(selection.paths, true)?;
+    preparation.skipped_registrations = selection.skipped;
+    if !preparation.ready {
+        if json_output {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "installed": true, "binary": target, "ready": false,
+                    "version": env!("CARGO_PKG_VERSION"), "preparation": preparation
+                }))?
+            );
+            std::process::exit(preparation.exit_code.max(1));
+        }
+        anyhow::bail!(
+            "The new executable is installed at {}, but memory storage preparation is incomplete. Run that executable with `prepare --registered --initialize --json` to resume. Completed migrations and backups are preserved.",
+            target.display()
+        );
+    }
     let bin = home.join("bin");
     let path = shell::configure(&bin);
     let path_active = std::env::var_os("PATH")
@@ -30,7 +67,8 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&json!({
                 "version": env!("CARGO_PKG_VERSION"), "home": home,
-                "binary": target, "path_modified": path.modified, "path_active": path_active,
+                "binary": target, "ready": true, "preparation": preparation,
+                "path_modified": path.modified, "path_active": path_active,
                 "path_profiles": path.profiles, "warnings": path.warnings,
                 "activate": path.command,
                 "next": if path_active { "Run omni-graph in an initialized project. Use omni-graph init once for a new project." } else { "Run the activation command in this terminal, or open a new terminal. Use omni-graph init once for a new project, then run omni-graph." }
@@ -43,6 +81,13 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
             target.display(),
             home.display()
         );
+        for skipped in &preparation.skipped_registrations {
+            eprintln!(
+                "Skipped registered project {}: {}. Reconnect it explicitly when available.",
+                skipped.path.display(),
+                skipped.reason
+            );
+        }
         if !path.profiles.is_empty() {
             println!("\nPATH saved for future terminals in:");
             for profile in &path.profiles {
@@ -78,7 +123,7 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
     Ok(())
 }
 
-// Shared binary-only replacement. Updates never open or mutate memory stores.
+// Shared binary-only replacement. The caller owns subsequent readiness preparation.
 pub(super) fn replace(home: &Path, source: &Path) -> Result<std::path::PathBuf> {
     let bin = home.join("bin");
     let target = bin.join(if cfg!(windows) {

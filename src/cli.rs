@@ -36,6 +36,20 @@ pub enum Command {
         #[arg(long)]
         store: Option<PathBuf>,
     },
+    /// Prepare selected stores with verified migrations; compatibility inspection stays read-only
+    Prepare {
+        #[arg(long, value_enum, conflicts_with_all = ["store", "registered"])]
+        scope: Option<Scope>,
+        /// Prepare this store directory directly
+        #[arg(long, conflicts_with = "registered")]
+        store: Option<PathBuf>,
+        /// Include global and valid registered project/client stores
+        #[arg(long)]
+        registered: bool,
+        /// Allow creation of missing stores and validated legacy JSON import
+        #[arg(long)]
+        initialize: bool,
+    },
     /// Install the executable and initialize user-level memory in ~/.omni-graph
     Install,
     /// Initialize project memory and install project-local agent skills

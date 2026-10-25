@@ -90,15 +90,8 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
         .strip_prefix('v')
         .context("release tag must start with v")?;
     if version(latest)? <= version(current)? {
-        if json_output {
-            println!(
-                "{}",
-                json!({"updated":false,"version":current,"latest":latest})
-            );
-        } else {
-            println!("Omni-graph {current} is up to date (latest release: {latest}).");
-        }
-        return Ok(());
+        let binary = std::env::current_exe()?;
+        return finish(home, &binary, false, current, current, latest, json_output);
     }
     let asset = format!("omni-graph-{}.tar.gz", platform()?);
     let base = format!("{REPO}/releases/download/{}", release.tag_name);
@@ -108,15 +101,71 @@ pub fn run(home: &Path, json_output: bool) -> Result<()> {
     let checksums = String::from_utf8(fetch(&format!("{base}/SHA256SUMS"), 64 * 1024)?)?;
     let archive = fetch(&format!("{base}/{asset}"), MAX_ARCHIVE)?;
     let binary = apply(home, latest, &asset, &checksums, &archive)?;
+    finish(home, &binary, true, current, latest, latest, json_output)
+}
+
+// Always use the selected new executable: this running process may understand an
+// older schema. Repeating an already-current update repairs an interrupted prepare.
+fn finish(
+    home: &Path,
+    binary: &Path,
+    updated: bool,
+    previous: &str,
+    version: &str,
+    latest: &str,
+    json_output: bool,
+) -> Result<()> {
+    let output = Command::new(binary)
+        .args(["prepare", "--registered", "--initialize", "--api-version", "1", "--json"])
+        .env("OMNI_GRAPH_HOME", home)
+        .output()
+        .context("Executable selected, but memory preparation could not start. Run prepare --registered --initialize --json with the installed executable.")?;
+    let preparation: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .context("Executable selected, but its preparation response was invalid; run prepare --registered --initialize --json to inspect readiness.")?;
+    let exit = preparation
+        .get("exit_code")
+        .and_then(serde_json::Value::as_i64);
+    let ready = preparation
+        .get("ready")
+        .and_then(serde_json::Value::as_bool);
+    ensure!(
+        preparation
+            .get("integration_api_version")
+            .and_then(serde_json::Value::as_u64)
+            == Some(1)
+            && exit == output.status.code().map(i64::from)
+            && ready.is_some(),
+        "Executable selected, but preparation did not return a valid API 1 readiness report. Run prepare --registered --initialize --json."
+    );
+    let ready = ready == Some(true) && output.status.success();
     if json_output {
         println!(
             "{}",
-            json!({"updated":true,"previous":current,"version":latest,"binary":binary,"home":home})
+            json!({"updated":updated,"previous":previous,"version":version,
+            "latest":latest,"binary":binary,"home":home,"ready":ready,"preparation":preparation})
         );
+        if !ready {
+            std::process::exit(output.status.code().filter(|c| *c != 0).unwrap_or(1));
+        }
     } else {
+        println!("Omni-graph {version} selected at {}.", binary.display());
+        if let Some(skipped) = preparation
+            .get("skipped_registrations")
+            .and_then(serde_json::Value::as_array)
+        {
+            for item in skipped {
+                eprintln!(
+                    "Skipped registered project: {}. Reconnect it explicitly when available.",
+                    item
+                );
+            }
+        }
+        ensure!(
+            ready,
+            "Executable update completed, but memory storage is not ready. Run `omni-graph prepare --registered --initialize --json` to inspect per-store results; completed migrations and backups are preserved."
+        );
         println!(
-            "Updated Omni-graph {current} → {latest}\nExecutable: {}\nExisting memories and project files are preserved.",
-            binary.display()
+            "Registered memory stores are ready. Existing memories and project files are preserved."
         );
     }
     Ok(())
@@ -243,6 +292,45 @@ mod tests {
             assert_eq!(fs::read(&target).unwrap(), b"previous");
         }
     }
+    #[cfg(unix)]
+    #[test]
+    fn readiness_uses_selected_executable_and_propagates_blocked_preparation() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let binary = root.path().join("selected-engine");
+        fs::write(
+            &binary,
+            r#"#!/bin/sh
+[ "$1 $2 $3 $4 $5 $6" = "prepare --registered --initialize --api-version 1 --json" ] || exit 99
+[ -n "$OMNI_GRAPH_HOME" ] || exit 98
+printf '%s' '{"integration_api_version":1,"ready":true,"exit_code":0,"skipped_registrations":[]}'
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+        finish(root.path(), &binary, true, "0.2.6", "0.2.7", "0.2.7", false).unwrap();
+        // Already-current updates also invoke preparation, repairing a prior interruption.
+        finish(
+            root.path(),
+            &binary,
+            false,
+            "0.2.7",
+            "0.2.7",
+            "0.2.7",
+            false,
+        )
+        .unwrap();
+        fs::write(
+            &binary,
+            r#"#!/bin/sh
+printf '%s' '{"integration_api_version":1,"ready":false,"exit_code":12,"skipped_registrations":[]}'
+exit 12
+"#,
+        )
+        .unwrap();
+        assert!(finish(root.path(), &binary, true, "0.2.6", "0.2.7", "0.2.7", false).is_err());
+    }
+
     #[cfg(unix)]
     #[test]
     fn verified_update_preserves_data_and_rejects_version_mismatch() {

@@ -402,3 +402,28 @@ any required migration or recovery action without changing the store.
 
 See the [public integration contract](docs/integration-contract.md) for API
 versioning, structured errors, installation checks, backups, and recovery.
+
+
+### Application SDK and upgrade recovery
+
+The [TypeScript SDK](sdk/README.md) provides typed Node.js access to Omni-graph
+through integration API 1. It checks the configured executable and handles supported
+store preparation under the connection's migration policy. It does not access SQLite
+directly or install binaries. The SDK is separate from the agent skill.
+
+Install/update prepares validated registered stores so existing API 1 applications
+can continue using their existing connection. For an explicitly selected project:
+
+```sh
+omni-graph --directory /path/to/project prepare --api-version 1 --json
+```
+
+Compatibility inspection remains read-only. See the
+[preparation and reconnect contract](docs/integration-contract.md#prepare-and-reconnect)
+for missing stores, manual upgrades and per-store failures.
+
+
+When upgrading through the old v0.2.7 self-updater, run
+`omni-graph prepare --registered --initialize --json` once after installing a version
+with this command. The old updater cannot run the newly introduced preparation
+hook; the new curl/npx installer handles it directly.

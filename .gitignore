@@ -3,3 +3,6 @@
 /native/*/
 *.tgz
 .omni-graph/
+
+/sdk/node_modules/
+/sdk/dist/
